@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+.claude/
+
+# Dependencies
+.venv/
+.pytest_cache/
+.ruff_cache/

@@ -1,0 +1,42 @@
+[project]
+name = "pydantic-plus-plus"
+version = "0.1.0"
+description = "Pydantic++ | Utilities to improve on the core Pydantic library"
+authors = [{name = "Andoni Garcia", email = "andoni.m.garcia@gmail.com"}]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = ["pydantic>=2.0"]
+
+[project.urls]
+Homepage = "https://github.com/andonimichael/pydantic-plus-plus"
+Repository = "https://github.com/andonimichael/pydantic-plus-plus"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.8",
+    "ty>=0.0.26",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pydantic_plus_plus"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pydantic_plus_plus"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
