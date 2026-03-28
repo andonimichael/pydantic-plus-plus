@@ -1,6 +1,6 @@
 - case: partial_field_access
   mypy_config: |
-    plugins = pydantic_plus_plus.mypy_plugin
+    plugins = pydantic_plus_plus.mypy
   main: |
     from pydantic import BaseModel
     from pydantic_plus_plus.partial import partial
@@ -16,7 +16,7 @@
 
 - case: partial_constructor_accepts_fields
   mypy_config: |
-    plugins = pydantic_plus_plus.mypy_plugin
+    plugins = pydantic_plus_plus.mypy
   main: |
     from pydantic import BaseModel
     from pydantic_plus_plus.partial import partial
@@ -31,7 +31,7 @@
 
 - case: partial_constructor_accepts_no_args
   mypy_config: |
-    plugins = pydantic_plus_plus.mypy_plugin
+    plugins = pydantic_plus_plus.mypy
   main: |
     from pydantic import BaseModel
     from pydantic_plus_plus.partial import partial
@@ -44,7 +44,7 @@
 
 - case: partial_apply_returns_original_type
   mypy_config: |
-    plugins = pydantic_plus_plus.mypy_plugin
+    plugins = pydantic_plus_plus.mypy
   main: |
     from pydantic import BaseModel
     from pydantic_plus_plus.partial import partial
@@ -61,7 +61,7 @@
 
 - case: partial_nested_model_field
   mypy_config: |
-    plugins = pydantic_plus_plus.mypy_plugin
+    plugins = pydantic_plus_plus.mypy
   main: |
     from pydantic import BaseModel
     from pydantic_plus_plus.partial import partial
@@ -80,7 +80,7 @@
 
 - case: partial_inherited_fields
   mypy_config: |
-    plugins = pydantic_plus_plus.mypy_plugin
+    plugins = pydantic_plus_plus.mypy
   main: |
     from pydantic import BaseModel
     from pydantic_plus_plus.partial import partial
@@ -98,7 +98,7 @@
 
 - case: partial_is_standalone
   mypy_config: |
-    plugins = pydantic_plus_plus.mypy_plugin
+    plugins = pydantic_plus_plus.mypy
     warn_unreachable = true
   main: |
     from pydantic import BaseModel
@@ -114,7 +114,7 @@
 
 - case: from_model_classmethod
   mypy_config: |
-    plugins = pydantic_plus_plus.mypy_plugin
+    plugins = pydantic_plus_plus.mypy
   main: |
     from pydantic import BaseModel
     from pydantic_plus_plus.partial import PartialBaseModel
@@ -130,7 +130,7 @@
 
 - case: partial_unknown_field_errors
   mypy_config: |
-    plugins = pydantic_plus_plus.mypy_plugin
+    plugins = pydantic_plus_plus.mypy
   main: |
     from pydantic import BaseModel
     from pydantic_plus_plus.partial import partial

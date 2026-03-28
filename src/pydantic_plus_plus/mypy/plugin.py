@@ -8,7 +8,7 @@ This gives full field-level type safety and IDE autocompletion.
 Enable in ``pyproject.toml``::
 
     [tool.mypy]
-    plugins = ["pydantic_plus_plus.mypy_plugin"]
+    plugins = ["pydantic_plus_plus.mypy"]
 """
 
 from __future__ import annotations

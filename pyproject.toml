@@ -46,7 +46,7 @@ warn_redundant_casts = true
 warn_return_any = true
 warn_unreachable = true
 warn_unused_configs = true
-plugins = ["pydantic_plus_plus.mypy_plugin"]
+plugins = ["pydantic_plus_plus.mypy"]
 
 [tool.ruff]
 target-version = "py310"

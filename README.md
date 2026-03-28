@@ -14,7 +14,7 @@ If you use [mypy](https://github.com/python/mypy) for type checking, please also
 
 ```toml
 [tool.mypy]
-plugins = ["pydantic.mypy", "pydantic_plus_plus.mypy_plugin"]
+plugins = ["pydantic.mypy", "pydantic_plus_plus.mypy"]
 ```
 
 ## Partial Models
@@ -158,7 +158,7 @@ Add the plugin to your mypy configuration:
 ```toml
 # pyproject.toml
 [tool.mypy]
-plugins = ["pydantic.mypy", "pydantic_plus_plus.mypy_plugin"]
+plugins = ["pydantic.mypy", "pydantic_plus_plus.mypy"]
 ```
 
 The plugin works alongside the standard Pydantic mypy plugin. Order does not matter.
