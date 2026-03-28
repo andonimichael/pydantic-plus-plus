@@ -1,0 +1,143 @@
+- case: partial_field_access
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy_plugin
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    PartialUser = partial(User, recursive=True)
+    p = PartialUser()
+    reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+    reveal_type(p.age)  # N: Revealed type is "builtins.int | None"
+
+- case: partial_constructor_accepts_fields
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy_plugin
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    PartialUser = partial(User, recursive=True)
+    p = PartialUser(name="Alice", age=30)
+    reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+
+- case: partial_constructor_accepts_no_args
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy_plugin
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+
+    PartialUser = partial(User, recursive=True)
+    p = PartialUser()  # no error — all fields optional
+
+- case: partial_apply_returns_original_type
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy_plugin
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    PartialUser = partial(User, recursive=True)
+    user = User(name="Alice", age=30)
+    p = PartialUser(name="Bob")
+    updated = p.apply(user)
+    reveal_type(updated)  # N: Revealed type is "main.User"
+
+- case: partial_nested_model_field
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy_plugin
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class Address(BaseModel):
+        street: str
+        city: str
+
+    class User(BaseModel):
+        name: str
+        address: Address
+
+    PartialUser = partial(User, recursive=True)
+    p = PartialUser()
+    reveal_type(p.address)  # N: Revealed type is "main.Address | None"
+
+- case: partial_inherited_fields
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy_plugin
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+
+    class Admin(User):
+        role: str
+
+    PartialAdmin = partial(Admin, recursive=True)
+    p = PartialAdmin()
+    reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+    reveal_type(p.role)  # N: Revealed type is "builtins.str | None"
+
+- case: partial_is_standalone
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy_plugin
+    warn_unreachable = true
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+
+    PartialUser = partial(User, recursive=True)
+    p = PartialUser()
+    if isinstance(p, User):  # E: Subclass of "PartialUser" and "User" cannot exist: would have incompatible method signatures  [unreachable]
+        pass
+
+- case: from_model_classmethod
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy_plugin
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import PartialBaseModel
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    PartialUser = PartialBaseModel.from_model(User, recursive=True)
+    p = PartialUser(name="Alice")
+    reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+    reveal_type(p.age)  # N: Revealed type is "builtins.int | None"
+
+- case: partial_unknown_field_errors
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy_plugin
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+
+    PartialUser = partial(User, recursive=True)
+    p = PartialUser()
+    p.nonexistent  # E: "PartialUser" has no attribute "nonexistent"  [attr-defined]

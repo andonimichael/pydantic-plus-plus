@@ -18,14 +18,35 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "mypy>=1.19.1",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
+    "pytest-mypy-plugins>=4.0.0",
     "ruff>=0.15.8",
     "ty>=0.0.26",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pydantic_plus_plus"]
+
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "$MYPY_CONFIG_FILE_DIR/src,$MYPY_CONFIG_FILE_DIR/tests"
+files = "$MYPY_CONFIG_FILE_DIR/src,$MYPY_CONFIG_FILE_DIR/tests"
+disallow_untyped_defs = true
+explicit_package_bases = true
+namespace_packages = true
+no_implicit_optional = true
+no_implicit_reexport = true
+show_absolute_path = true
+show_column_numbers = true
+show_error_codes = true
+show_error_context = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unreachable = true
+warn_unused_configs = true
+plugins = ["pydantic_plus_plus.mypy_plugin"]
 
 [tool.ruff]
 target-version = "py310"
