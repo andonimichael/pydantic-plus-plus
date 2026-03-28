@@ -1,5 +1,9 @@
 # Pydantic++
 
+[![CI](https://github.com/andonimichael/pydantic-plus-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/andonimichael/pydantic-plus-plus/actions/workflows/ci.yml)
+[![Release](https://github.com/andonimichael/pydantic-plus-plus/actions/workflows/release.yml/badge.svg)](https://github.com/andonimichael/pydantic-plus-plus/actions/workflows/release.yml)
+[![PyPI version](https://img.shields.io/pypi/v/pydantic-plus-plus)](https://pypi.org/project/pydantic-plus-plus/)
+
 Pydantic++ is a suite of utilities to improve upon the core [Pydantic](https://github.com/pydantic/pydantic) library. We stand on the shoulders of giants here. Huge kudos to the Pydantic team for all their hard work building an amazing product.
 
 ## Installation
