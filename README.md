@@ -19,7 +19,7 @@ plugins = ["pydantic.mypy", "pydantic_plus_plus.mypy"]
 
 ## Partial Models
 
-`partial` creates a `PartialBaseModel`, a variant of the given Pydantic `BaseModel` where every field is `Optional` with a default of `None`. This is the type-safe way to represent partial updates (PATCH payloads, upsert data, sparse sync records) without manually duplicating your model with every field made optional.
+`partial` creates a `PartialBaseModel`, a variant of the given Pydantic `BaseModel` where every field is `Optional` with a default of `None`. This is the type-safe way to represent partial updates (PATCH payloads, upsert data, sparse sync records) without manually duplicating each model with every field made optional.
 
 ### Usage
 
@@ -175,6 +175,41 @@ def update(p: PartialUser) -> None:  # mypy error: not valid as a type
 ```
 
 With the plugin, both lines type-check cleanly — no `# type: ignore` needed.
+
+## Comparable Packages
+
+### Why Pydantic++ over pydantic-partial?
+
+Pydantic++ offers a similar feature set, but takes a different philosophical approach than [pydantic-partial](https://github.com/team23/pydantic-partial) that is more aligned with SOLID Object Oriented design principles.
+
+Here's how the two differ:
+
+| | Pydantic++ | pydantic-partial |
+|---|---|---|
+| Partial models | All fields optional | All fields optional |
+| Selective fields | Planned | `model_as_partial("name", "email")` |
+| Dot-notation nesting | Planned | `model_as_partial("address.city")` |
+| Wildcard nesting | Planned | `model_as_partial("address.*")` |
+| Field metadata preservation | Yes | Yes |
+| Caching | Yes | Yes |
+| Recursive by default | Yes | No (opt-in) |
+| Mypy plugin | Yes | No |
+| `.apply()` deep merge | Yes | No |
+| Standalone partial classes | Yes — partials don't subclass the original | No — partials subclass the original |
+
+#### Philosophical Differences
+
+`pydantic-partial`'s partials subclass the original model, so `isinstance(patch, User)` is `True`. This violates the Liskov Substitution Principle — a partial `User` weakens the preconditions of the original (required fields become optional), meaning code that expects a complete `User` can silently receive one with `None` fields. In addition to breaking LSP, this also causes problems for type checkers because the subclass relationship tells type checkers the partial *is* a `User`.
+
+Pydantic++ takes a different philosophical approach, where partials are standalone classes. This preserves LSP. Additionally, because `isinstance(patch, User)` is `False`, the type checker can enforce the boundary between partial and complete data. Users must go through `.apply()` to produce a real `User`, making the conversion explicit and safe.
+
+#### Mypy plugin
+
+This is a well known limitation of `pydantic-partial`, which their README calls out as "a massive amount of work while being kind of a bad hack." Pydantic++ ships a mypy plugin that synthesizes full `TypeInfo` objects, giving users field-level type checking, constructor validation, and IDE autocompletion with zero `# type: ignore` comments.
+
+#### `.apply()` deep merge
+
+pydantic-partial creates partial models but has no built-in way to merge a partial back into an existing instance. Pydantic++ provides `.apply()` which recursively merges only explicitly-set fields, preserving untouched nested data.
 
 ## License
 
