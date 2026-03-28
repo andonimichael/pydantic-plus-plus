@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Version Scope"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Bump Version, Tag & Release
+    needs: ci
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.PYDANTIC_PLUS_PLUS_RELEASE_PAT }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        run: |
+          chmod +x scripts/release.sh
+          ./scripts/release.sh ${{ inputs.scope }}
+
+      - name: Commit and tag
+        run: |
+          TAG="v${{ steps.bump.outputs.new_version }}"
+          git add pyproject.toml
+          git commit -m "$(cat <<EOF
+          Release ${TAG}
+
+          Scope: ${{ inputs.scope }}
+          Previous: v${{ steps.bump.outputs.old_version }}
+          EOF
+          )"
+          git tag -a "$TAG" -m "Release ${TAG}"
+          git push origin main "$TAG"
+
+  build:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.release.outputs.new_version }}
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: Build package
+        run: uv build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: [release, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ needs.release.outputs.new_version }}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | sed -n '2p' || true)
+
+          ARGS=(--title "${TAG}" --generate-notes)
+
+          if [[ -n "$PREV_TAG" ]]; then
+            ARGS+=(--notes-start-tag "$PREV_TAG")
+          fi
+
+          VERSION="${{ needs.release.outputs.new_version }}"
+          MAJOR="${VERSION%%.*}"
+          if [[ "$MAJOR" == "0" ]]; then
+            ARGS+=(--prerelease)
+          fi
+
+          gh release create "${TAG}" dist/* "${ARGS[@]}"
