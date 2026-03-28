@@ -25,7 +25,6 @@ from mypy.nodes import (
     CallExpr,
     ClassDef,
     FuncDef,
-    MypyFile,
     NameExpr,
     PassStmt,
     RefExpr,
@@ -34,12 +33,13 @@ from mypy.nodes import (
     TypeInfo,
     Var,
 )
-from mypy.plugin import DynamicClassDefContext, Plugin
+from mypy.plugin import DynamicClassDefContext, FunctionContext, MethodContext, Plugin
 from mypy.types import (
     CallableType as MypyCallableType,
     Instance,
     NoneType,
     Type,
+    TypeType,
     UnionType,
     get_proper_type,
 )
@@ -86,7 +86,7 @@ def _resolve_model_info(call: CallExpr, api: DynamicClassDefContext) -> TypeInfo
 def _build_partial_typeinfo(
     model_info: TypeInfo,
     partial_base_info: TypeInfo,
-    caller_module: MypyFile,
+    module_name: str,
     assigned_name: str,
 ) -> TypeInfo:
     cache_key = model_info.fullname
@@ -94,9 +94,9 @@ def _build_partial_typeinfo(
         return _synthetic_cache[cache_key]
 
     cls_def = ClassDef(assigned_name, Block([]))
-    cls_def.fullname = f"{caller_module.fullname}.{assigned_name}"
+    cls_def.fullname = f"{module_name}.{assigned_name}"
 
-    info = TypeInfo(SymbolTable(), cls_def, caller_module.fullname)
+    info = TypeInfo(SymbolTable(), cls_def, module_name)
     cls_def.info = info
     info.bases = [Instance(partial_base_info, [Instance(model_info, [])])]
     info.mro = [info] + partial_base_info.mro
@@ -121,8 +121,7 @@ def _build_partial_typeinfo(
     return info
 
 
-def _add_init(info: TypeInfo, api: DynamicClassDefContext) -> None:
-    function_type = api.api.named_type("builtins.function", [])
+def _add_init(info: TypeInfo, function_type: Instance) -> None:
     self_type = Instance(info, [])
 
     args = [Argument(Var("self"), self_type, None, ARG_POS)]
@@ -160,18 +159,78 @@ def _dynamic_class_callback(ctx: DynamicClassDefContext) -> None:
     if caller_module is None:
         return
 
-    info = _build_partial_typeinfo(model_info, partial_base_info, caller_module, ctx.name)
+    info = _build_partial_typeinfo(model_info, partial_base_info, caller_module.fullname, ctx.name)
 
     if "__init__" not in info.names:
-        _add_init(info, ctx)
+        function_type = ctx.api.named_type("builtins.function", [])
+        _add_init(info, function_type)
 
     caller_module.names[ctx.name] = SymbolTableNode(GDEF, info)
+
+
+def _extract_model_info_from_type(typ: Type) -> TypeInfo | None:
+    proper = get_proper_type(typ)
+    if isinstance(proper, TypeType):
+        inner = get_proper_type(proper.item)
+        if isinstance(inner, Instance):
+            return inner.type
+    if isinstance(proper, MypyCallableType):
+        ret = get_proper_type(proper.ret_type)
+        if isinstance(ret, Instance):
+            return ret.type
+    return None
+
+
+def _extract_partial_base_from_default(default_return_type: Type) -> TypeInfo | None:
+    proper = get_proper_type(default_return_type)
+    if isinstance(proper, TypeType):
+        inner = get_proper_type(proper.item)
+        if isinstance(inner, Instance):
+            return inner.type
+    return None
+
+
+def _function_hook_callback(ctx: FunctionContext | MethodContext) -> Type:
+    if not ctx.arg_types or not ctx.arg_types[0]:
+        return ctx.default_return_type
+
+    model_info = _extract_model_info_from_type(ctx.arg_types[0][0])
+    if model_info is None:
+        return ctx.default_return_type
+
+    cache_key = model_info.fullname
+    if cache_key in _synthetic_cache:
+        info = _synthetic_cache[cache_key]
+        return TypeType(Instance(info, []))
+
+    partial_base_info = _extract_partial_base_from_default(ctx.default_return_type)
+    if partial_base_info is None:
+        return ctx.default_return_type
+
+    assigned_name = f"Partial{model_info.name}"
+    info = _build_partial_typeinfo(model_info, partial_base_info, model_info.module_name, assigned_name)
+
+    if "__init__" not in info.names:
+        function_type = ctx.api.named_generic_type("builtins.function", [])
+        _add_init(info, function_type)
+
+    return TypeType(Instance(info, []))
 
 
 class PydanticPlusPlusPlugin(Plugin):
     def get_dynamic_class_hook(self, fullname: str) -> Callable[[DynamicClassDefContext], None] | None:
         if fullname in (PARTIAL_FUNC, FROM_MODEL):
             return _dynamic_class_callback
+        return None
+
+    def get_function_hook(self, fullname: str) -> Callable[[FunctionContext], Type] | None:
+        if fullname == PARTIAL_FUNC:
+            return _function_hook_callback
+        return None
+
+    def get_method_hook(self, fullname: str) -> Callable[[MethodContext], Type] | None:
+        if fullname == FROM_MODEL:
+            return _function_hook_callback  # type: ignore[return-value]
         return None
 
 

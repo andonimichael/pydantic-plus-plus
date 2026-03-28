@@ -141,3 +141,106 @@
     PartialUser = partial(User, recursive=True)
     p = PartialUser()
     p.nonexistent  # E: "PartialUser" has no attribute "nonexistent"  [attr-defined]
+
+- case: partial_inside_function_field_access
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    def test_it() -> None:
+        PartialUser = partial(User, recursive=True)
+        p = PartialUser()
+        reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+        reveal_type(p.age)  # N: Revealed type is "builtins.int | None"
+
+- case: partial_inside_function_constructor
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    def test_it() -> None:
+        PartialUser = partial(User, recursive=True)
+        p = PartialUser(name="Alice", age=30)
+        reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+
+- case: partial_inside_method_field_access
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    class TestPartial:
+        def test_it(self) -> None:
+            PartialUser = partial(User, recursive=True)
+            p = PartialUser(name="Alice")
+            reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+            reveal_type(p.age)  # N: Revealed type is "builtins.int | None"
+
+- case: partial_inside_function_inherited_fields
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+
+    class Admin(User):
+        role: str
+
+    def test_it() -> None:
+        PartialAdmin = partial(Admin, recursive=True)
+        p = PartialAdmin()
+        reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+        reveal_type(p.role)  # N: Revealed type is "builtins.str | None"
+
+- case: from_model_inside_function
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import PartialBaseModel
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    def test_it() -> None:
+        PartialUser = PartialBaseModel.from_model(User, recursive=True)
+        p = PartialUser(name="Alice")
+        reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+        reveal_type(p.age)  # N: Revealed type is "builtins.int | None"
+
+- case: partial_inside_function_no_args
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+        age: int
+        email: str
+
+    def test_it() -> None:
+        PartialUser = partial(User, recursive=True)
+        p = PartialUser()  # no error — all fields optional
