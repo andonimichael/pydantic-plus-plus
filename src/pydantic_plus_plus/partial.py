@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any, ClassVar, Generic, Optional, TypeVar, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, create_model
@@ -145,7 +146,7 @@ def _create_partial(
         annotation = _resolve_partial_annotation(annotation, recursive=recursive, _cache=_cache)
         optional_annotation = _make_optional(annotation)
 
-        new_field_info = field_info._copy()
+        new_field_info = copy.copy(field_info)
         new_field_info.default = None
         new_field_info.default_factory = None
         field_definitions[field_name] = (optional_annotation, new_field_info)

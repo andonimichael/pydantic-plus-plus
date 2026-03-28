@@ -18,24 +18,28 @@ from typing import Callable
 from mypy.nodes import (
     ARG_NAMED_OPT,
     ARG_POS,
+    GDEF,
     MDEF,
     Argument,
     Block,
+    CallExpr,
     ClassDef,
     FuncDef,
+    MypyFile,
+    NameExpr,
     PassStmt,
+    RefExpr,
     SymbolTable,
     SymbolTableNode,
     TypeInfo,
     Var,
 )
-from mypy.plugin import CheckerPluginInterface, FunctionContext, MethodContext, Plugin
+from mypy.plugin import DynamicClassDefContext, Plugin
 from mypy.types import (
     CallableType as MypyCallableType,
     Instance,
     NoneType,
     Type,
-    TypeType,
     UnionType,
     get_proper_type,
 )
@@ -53,18 +57,46 @@ def _make_optional(typ: Type) -> Type:
     return UnionType([typ, NoneType()])
 
 
+def _get_partial_base_info(api: DynamicClassDefContext) -> TypeInfo | None:
+    partial_base_sym = api.api.lookup_fully_qualified_or_none("pydantic_plus_plus.partial.PartialBaseModel")
+    if partial_base_sym is None or not isinstance(partial_base_sym.node, TypeInfo):
+        return None
+    return partial_base_sym.node
+
+
+def _resolve_model_info(call: CallExpr, api: DynamicClassDefContext) -> TypeInfo | None:
+    if not call.args:
+        return None
+
+    first_arg = call.args[0]
+    if not isinstance(first_arg, RefExpr):
+        return None
+
+    if isinstance(first_arg, NameExpr) and first_arg.fullname:
+        sym = api.api.lookup_fully_qualified_or_none(first_arg.fullname)
+        if sym is not None and isinstance(sym.node, TypeInfo):
+            return sym.node
+
+    if first_arg.node is not None and isinstance(first_arg.node, TypeInfo):
+        return first_arg.node
+
+    return None
+
+
 def _build_partial_typeinfo(
     model_info: TypeInfo,
     partial_base_info: TypeInfo,
+    caller_module: MypyFile,
+    assigned_name: str,
 ) -> TypeInfo:
-    if model_info.fullname in _synthetic_cache:
-        return _synthetic_cache[model_info.fullname]
+    cache_key = model_info.fullname
+    if cache_key in _synthetic_cache:
+        return _synthetic_cache[cache_key]
 
-    partial_name = f"Partial{model_info.name}"
-    cls_def = ClassDef(partial_name, Block([]))
-    cls_def.fullname = f"pydantic_plus_plus.partial.{partial_name}"
+    cls_def = ClassDef(assigned_name, Block([]))
+    cls_def.fullname = f"{caller_module.fullname}.{assigned_name}"
 
-    info = TypeInfo(SymbolTable(), cls_def, "pydantic_plus_plus.partial")
+    info = TypeInfo(SymbolTable(), cls_def, caller_module.fullname)
     cls_def.info = info
     info.bases = [Instance(partial_base_info, [Instance(model_info, [])])]
     info.mro = [info] + partial_base_info.mro
@@ -85,18 +117,18 @@ def _build_partial_typeinfo(
             var.is_initialized_in_class = True
             info.names[name] = SymbolTableNode(MDEF, var)
 
-    _synthetic_cache[model_info.fullname] = info
+    _synthetic_cache[cache_key] = info
     return info
 
 
-def _add_init(info: TypeInfo, fields: dict[str, Type], api: CheckerPluginInterface) -> None:
-    """Add a synthetic ``__init__`` so mypy accepts keyword construction."""
-    function_type = api.named_generic_type("builtins.function", [])
+def _add_init(info: TypeInfo, api: DynamicClassDefContext) -> None:
+    function_type = api.api.named_type("builtins.function", [])
     self_type = Instance(info, [])
 
     args = [Argument(Var("self"), self_type, None, ARG_POS)]
-    for name, field_type in fields.items():
-        args.append(Argument(Var(name), field_type, None, ARG_NAMED_OPT))
+    for name, sym in info.names.items():
+        if isinstance(sym.node, Var) and sym.node.type is not None:
+            args.append(Argument(Var(name), sym.node.type, None, ARG_NAMED_OPT))
 
     arg_types = [arg.type_annotation for arg in args]
     arg_kinds = [arg.kind for arg in args]
@@ -108,69 +140,38 @@ def _add_init(info: TypeInfo, fields: dict[str, Type], api: CheckerPluginInterfa
     func.type = sig
     func._fullname = f"{info.fullname}.__init__"
 
-    sym = SymbolTableNode(MDEF, func)
-    sym.plugin_generated = True
-    info.names["__init__"] = sym
+    sym_node = SymbolTableNode(MDEF, func)
+    sym_node.plugin_generated = True
+    info.names["__init__"] = sym_node
 
 
-def _extract_model_info(ctx: FunctionContext | MethodContext) -> TypeInfo | None:
-    if not ctx.arg_types or not ctx.arg_types[0]:
-        return None
+def _dynamic_class_callback(ctx: DynamicClassDefContext) -> None:
+    call = ctx.call
 
-    model_arg = get_proper_type(ctx.arg_types[0][0])
-
-    if isinstance(model_arg, TypeType):
-        inner = get_proper_type(model_arg.item)
-        if isinstance(inner, Instance):
-            return inner.type
-        return None
-
-    if isinstance(model_arg, MypyCallableType):
-        ret = get_proper_type(model_arg.ret_type)
-        if isinstance(ret, Instance):
-            return ret.type
-        return None
-
-    return None
-
-
-def _partial_callback(ctx: FunctionContext | MethodContext) -> Type:
-    model_info = _extract_model_info(ctx)
+    model_info = _resolve_model_info(call, ctx)
     if model_info is None:
-        return ctx.default_return_type
+        return
 
-    # Extract PartialBaseModel TypeInfo from the default return type
-    default = get_proper_type(ctx.default_return_type)
-    if not isinstance(default, TypeType):
-        return ctx.default_return_type
-    inner = get_proper_type(default.item)
-    if not isinstance(inner, Instance):
-        return ctx.default_return_type
-    partial_base_info = inner.type
+    partial_base_info = _get_partial_base_info(ctx)
+    if partial_base_info is None:
+        return
 
-    partial_info = _build_partial_typeinfo(model_info, partial_base_info)
+    caller_module = ctx.api.modules.get(ctx.api.cur_mod_id)  # type: ignore[attr-defined]
+    if caller_module is None:
+        return
 
-    # Add __init__ if not already present (first call only)
-    if "__init__" not in partial_info.names:
-        fields = {
-            name: sym.node.type
-            for name, sym in partial_info.names.items()
-            if isinstance(sym.node, Var) and sym.node.type is not None
-        }
-        _add_init(partial_info, fields, ctx.api)
+    info = _build_partial_typeinfo(model_info, partial_base_info, caller_module, ctx.name)
 
-    return TypeType(Instance(partial_info, []))
+    if "__init__" not in info.names:
+        _add_init(info, ctx)
+
+    caller_module.names[ctx.name] = SymbolTableNode(GDEF, info)
 
 
 class PydanticPlusPlusPlugin(Plugin):
-    def get_function_hook(self, fullname: str) -> Callable[[FunctionContext], Type] | None:
-        if fullname == PARTIAL_FUNC:
-            return _partial_callback  # type: ignore[return-value]
-        return None
-
-    def get_method_hook(self, fullname: str) -> Callable[[MethodContext], Type] | None:
-        if fullname == FROM_MODEL:
-            return _partial_callback  # type: ignore[return-value]
+    def get_dynamic_class_hook(self, fullname: str) -> Callable[[DynamicClassDefContext], None] | None:
+        if fullname in (PARTIAL_FUNC, FROM_MODEL):
+            return _dynamic_class_callback
         return None
 
 
