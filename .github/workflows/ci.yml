@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pre-commit:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -25,8 +25,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
-      - name: Run pre-commit
-        uses: pre-commit/action@v3.0.1
+      - name: Ruff check
+        run: uv run ruff check
+
+      - name: Ruff format
+        run: uv run ruff format --check
+
+      - name: Mypy
+        run: uv run mypy --config-file pyproject.toml
 
   test:
     runs-on: ubuntu-latest
