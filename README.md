@@ -12,7 +12,7 @@ Pydantic++ is a suite of utilities to improve upon the core [Pydantic](https://g
 - [Model Updater](src/pydantic_plus_plus/update/README.md) — type-safe immutable builder for updating model instances
 - [Model Registry](src/pydantic_plus_plus/registry/README.md) — discover all BaseModel subclasses in a module tree
 - [Dummy Models](src/pydantic_plus_plus/dummy/README.md) — generate dummy model instances with random data for testing
-- [MyPy Plugin](src/pydantic_plus_plus/mypy/README.md) — full `mypy` integration for partial models and model updates
+- [Mypy Plugin](src/pydantic_plus_plus/mypy/README.md) — full `mypy` integration for partial models and model updates
 
 ## Installation
 
