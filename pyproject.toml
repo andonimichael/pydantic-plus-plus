@@ -1,6 +1,6 @@
 [project]
 name = "pydantic-plus-plus"
-version = "0.2.0"
+version = "0.3.0"
 description = "Pydantic++ | Utilities to improve on the core Pydantic library"
 authors = [{name = "Andoni Garcia", email = "andoni.m.garcia@gmail.com"}]
 readme = "README.md"
