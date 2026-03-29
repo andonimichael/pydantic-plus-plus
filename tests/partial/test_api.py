@@ -3,7 +3,8 @@ from enum import Enum
 from typing import Annotated, Optional, get_args
 import pytest
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from pydantic_plus_plus.partial import PartialBaseModel, partial, _partial_model_cache
+from pydantic_plus_plus.partial import PartialBaseModel, partial
+from pydantic_plus_plus.partial._partial import _partial_model_cache
 
 
 class Country(str, Enum):
@@ -504,3 +505,231 @@ class TestPartialApply:
         assert isinstance(updated, Admin)
         assert updated.role == "read-write"
         assert updated.permissions == ["read", "write"]
+
+
+class TestSelectivePartialConstruction:
+    def test_selected_fields_become_optional(self) -> None:
+        PartialUser = partial(User, "name", "email")
+        assert not PartialUser.model_fields["name"].is_required()
+        assert not PartialUser.model_fields["email"].is_required()
+
+    def test_non_selected_fields_stay_required(self) -> None:
+        PartialUser = partial(User, "name")
+        assert PartialUser.model_fields["age"].is_required()
+
+    def test_non_selected_field_with_default_keeps_default(self) -> None:
+        PartialUser = partial(User, "name")
+        assert PartialUser.model_fields["email"].default == "user@example.com"
+
+    def test_selected_field_defaults_to_none(self) -> None:
+        PartialUser = partial(User, "name")
+        p = PartialUser(age=25, address=Address(street="123 1st Ave", city="New York", state="NY", zip_code="10001"))
+        assert p.name is None
+
+    def test_construction_requires_non_selected_fields(self) -> None:
+        PartialUser = partial(User, "name")
+        with pytest.raises(ValidationError):
+            PartialUser(name="Alice")  # type: ignore[call-arg]
+
+    def test_construction_with_all_provided(self) -> None:
+        PartialUser = partial(User, "name")
+        addr = Address(street="123 1st Ave", city="New York", state="NY", zip_code="10001")
+        p = PartialUser(name="Alice", age=30, address=addr)
+        assert p.name == "Alice"
+        assert p.age == 30
+
+    def test_is_subclass_of_partial_base_model(self) -> None:
+        PartialUser = partial(User, "name")
+        assert issubclass(PartialUser, PartialBaseModel)
+
+    def test_annotation_of_selected_field_is_optional(self) -> None:
+        PartialUser = partial(User, "name")
+        ann = PartialUser.model_fields["name"].annotation
+        assert ann == str | None
+
+    def test_annotation_of_non_selected_field_unchanged(self) -> None:
+        PartialUser = partial(User, "name")
+        ann = PartialUser.model_fields["age"].annotation
+        assert ann is int
+
+
+class TestSelectivePartialDotNotation:
+    def test_parent_stays_required(self) -> None:
+        PartialUser = partial(User, "address.city")
+        assert PartialUser.model_fields["address"].is_required()
+
+    def test_nested_selected_field_is_optional(self) -> None:
+        PartialUser = partial(User, "address.city")
+        addr_type = PartialUser.model_fields["address"].annotation
+        assert addr_type is not None
+        assert issubclass(addr_type, PartialBaseModel)
+        assert not addr_type.model_fields["city"].is_required()
+
+    def test_nested_non_selected_stays_required(self) -> None:
+        PartialUser = partial(User, "address.city")
+        addr_type = PartialUser.model_fields["address"].annotation
+        assert addr_type is not None
+        assert addr_type.model_fields["street"].is_required()
+
+    def test_construction_with_partial_nested(self) -> None:
+        PartialUser = partial(User, "address.city")
+        p = PartialUser(
+            name="Alice",
+            age=30,
+            address={"street": "123 1st Ave", "state": "NY", "zip_code": "10001"},
+        )
+        assert p.address.city is None
+        assert p.address.street == "123 1st Ave"
+
+    def test_deep_dot_notation(self) -> None:
+        class Company(BaseModel):
+            name: str
+            ceo: User
+
+        PartialCompany = partial(Company, "ceo.address.city")
+        ceo_type = PartialCompany.model_fields["ceo"].annotation
+        assert ceo_type is not None
+        assert issubclass(ceo_type, PartialBaseModel)
+        addr_type = ceo_type.model_fields["address"].annotation
+        assert addr_type is not None
+        assert issubclass(addr_type, PartialBaseModel)
+        assert not addr_type.model_fields["city"].is_required()
+        assert addr_type.model_fields["street"].is_required()
+
+
+class TestSelectivePartialWildcard:
+    def test_wildcard_makes_all_nested_fields_optional(self) -> None:
+        PartialUser = partial(User, "address.*")
+        addr_type = PartialUser.model_fields["address"].annotation
+        assert addr_type is not None
+        assert issubclass(addr_type, PartialBaseModel)
+        for field_name, field_info in addr_type.model_fields.items():
+            assert not field_info.is_required(), f"{field_name} should be optional"
+
+    def test_parent_stays_required_with_wildcard(self) -> None:
+        PartialUser = partial(User, "address.*")
+        assert PartialUser.model_fields["address"].is_required()
+
+    def test_wildcard_construction(self) -> None:
+        PartialUser = partial(User, "address.*")
+        p = PartialUser(name="Alice", age=30, address={})
+        assert p.address.city is None
+        assert p.address.street is None
+
+
+class TestSelectivePartialCombined:
+    def test_terminal_and_nested_same_field(self) -> None:
+        PartialUser = partial(User, "address", "address.city")
+        assert not PartialUser.model_fields["address"].is_required()
+        addr_ann = PartialUser.model_fields["address"].annotation
+        args = get_args(addr_ann)
+        partial_addr_type = next(a for a in args if a is not type(None))
+        assert issubclass(partial_addr_type, PartialBaseModel)
+        assert not partial_addr_type.model_fields["city"].is_required()
+        assert partial_addr_type.model_fields["street"].is_required()
+
+    def test_multiple_dot_same_parent(self) -> None:
+        PartialUser = partial(User, "address.city", "address.state")
+        addr_type = PartialUser.model_fields["address"].annotation
+        assert addr_type is not None
+        assert not addr_type.model_fields["city"].is_required()
+        assert not addr_type.model_fields["state"].is_required()
+        assert addr_type.model_fields["street"].is_required()
+
+
+class TestSelectivePartialApply:
+    def test_apply_merges_all_set_fields(self) -> None:
+        PartialUser = partial(User, "name")
+        user = User(
+            name="Alice",
+            age=30,
+            email="ali@ce.com",
+            address=Address(street="123 1st Ave", city="New York", state="NY", zip_code="10001"),
+        )
+        patch = PartialUser(
+            name="Bob",
+            age=99,
+            address=Address(street="X", city="X", state="X", zip_code="X"),
+        )
+        updated = patch.apply(user)
+        assert updated.name == "Bob"
+        assert updated.age == 99
+        assert updated.email == "ali@ce.com"  # unset: preserved
+        assert updated.address.street == "X"
+
+    def test_apply_with_unset_selected_field(self) -> None:
+        PartialUser = partial(User, "name", "email")
+        user = User(
+            name="Alice",
+            age=30,
+            address=Address(street="123 1st Ave", city="New York", state="NY", zip_code="10001"),
+        )
+        patch = PartialUser(
+            age=30, address=Address(street="123 1st Ave", city="New York", state="NY", zip_code="10001")
+        )
+        updated = patch.apply(user)
+        assert updated.name == "Alice"  # unset selected field: preserved
+        assert updated.email == "user@example.com"  # unset selected field: preserved
+
+    def test_apply_returns_original_model_type(self) -> None:
+        PartialUser = partial(User, "name")
+        user = User(
+            name="Alice",
+            age=30,
+            address=Address(street="123 1st Ave", city="New York", state="NY", zip_code="10001"),
+        )
+        patch = PartialUser(name="Bob", age=30, address=user.address)
+        updated = patch.apply(user)
+        assert isinstance(updated, User)
+
+    def test_apply_dot_notation_merges_nested(self) -> None:
+        PartialUser = partial(User, "address.city")
+        user = User(
+            name="Alice",
+            age=30,
+            address=Address(street="123 1st Ave", city="New York", state="NY", zip_code="10001"),
+        )
+        patch = PartialUser(
+            name="Alice",
+            age=30,
+            address={"street": "123 1st Ave", "city": "New York City", "state": "NY", "zip_code": "10001"},
+        )
+        updated = patch.apply(user)
+        assert updated.address.city == "New York City"
+        assert updated.address.street == "123 1st Ave"  # preserved
+
+
+class TestSelectivePartialCaching:
+    def test_same_fields_same_result(self) -> None:
+        P1 = partial(User, "name")
+        P2 = partial(User, "name")
+        assert P1 is P2
+
+    def test_different_fields_different_result(self) -> None:
+        P1 = partial(User, "name")
+        P2 = partial(User, "email")
+        assert P1 is not P2
+
+    def test_selective_vs_all_fields_different(self) -> None:
+        P1 = partial(User)
+        P2 = partial(User, "name")
+        assert P1 is not P2
+
+    def test_field_order_does_not_matter(self) -> None:
+        P1 = partial(User, "name", "email")
+        P2 = partial(User, "email", "name")
+        assert P1 is P2
+
+
+class TestSelectivePartialValidation:
+    def test_nonexistent_field_raises(self) -> None:
+        with pytest.raises(ValueError, match="does not exist"):
+            partial(User, "nonexistent")
+
+    def test_dot_on_non_model_raises(self) -> None:
+        with pytest.raises(ValueError, match="is not a BaseModel subclass"):
+            partial(User, "name.foo")
+
+    def test_empty_spec_raises(self) -> None:
+        with pytest.raises(ValueError, match="Empty field spec"):
+            partial(User, "")

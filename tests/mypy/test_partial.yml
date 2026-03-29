@@ -244,3 +244,92 @@
     def test_it() -> None:
         PartialUser = partial(User, recursive=True)
         p = PartialUser()  # no error — all fields optional
+
+- case: selective_partial_field_types
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+        age: int
+        email: str
+
+    PartialUser = partial(User, "name", "email")
+    p = PartialUser(age=30)
+    reveal_type(p.name)   # N: Revealed type is "builtins.str | None"
+    reveal_type(p.age)    # N: Revealed type is "builtins.int"
+    reveal_type(p.email)  # N: Revealed type is "builtins.str | None"
+
+- case: selective_partial_constructor
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    PartialUser = partial(User, "name")
+    p = PartialUser(age=30)  # name is optional, age is required
+    reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+    reveal_type(p.age)   # N: Revealed type is "builtins.int"
+
+- case: selective_partial_inside_function
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    def test_it() -> None:
+        PartialUser = partial(User, "name")
+        p = PartialUser(age=30)
+        reveal_type(p.name)  # N: Revealed type is "builtins.str | None"
+        reveal_type(p.age)   # N: Revealed type is "builtins.int"
+
+- case: selective_partial_dot_notation_types
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class Address(BaseModel):
+        street: str
+        city: str
+
+    class User(BaseModel):
+        name: str
+        address: Address
+
+    PartialUser = partial(User, "address.city")
+    p = PartialUser(name="Alice", address=Address(street="1st", city="NYC"))
+    reveal_type(p.name)  # N: Revealed type is "builtins.str"
+
+- case: selective_partial_wildcard_types
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.partial import partial
+
+    class Address(BaseModel):
+        street: str
+        city: str
+
+    class User(BaseModel):
+        name: str
+        address: Address
+
+    PartialUser = partial(User, "address.*")
+    p = PartialUser(name="Alice", address=Address(street="1st", city="NYC"))
+    reveal_type(p.name)  # N: Revealed type is "builtins.str"

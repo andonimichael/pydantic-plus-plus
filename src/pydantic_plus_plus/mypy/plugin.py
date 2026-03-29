@@ -1,9 +1,9 @@
 """Mypy plugin for pydantic-plus-plus.
 
-When mypy sees ``partial(BaseModel)`` or
-``PartialBaseModel.from_model(BaseModel)``, this plugin creates a synthetic
-TypeInfo whose fields are ``Optional`` versions of the original model's fields.
-This gives full field-level type safety and IDE autocompletion.
+When mypy sees ``partial(Model)`` or ``PartialBaseModel.from_model(Model)``,
+this plugin creates a synthetic TypeInfo whose fields mirror the original
+model's. For all-fields mode every field becomes Optional; for selective mode
+(``partial(Model, "name")``) only the named fields do.
 
 Enable in ``pyproject.toml``::
 
@@ -16,11 +16,13 @@ from __future__ import annotations
 from typing import Callable
 
 from mypy.nodes import (
+    ARG_NAMED,
     ARG_NAMED_OPT,
     ARG_POS,
     GDEF,
     MDEF,
     Argument,
+    AssignmentStmt,
     Block,
     CallExpr,
     ClassDef,
@@ -28,26 +30,110 @@ from mypy.nodes import (
     NameExpr,
     PassStmt,
     RefExpr,
+    StrExpr,
     SymbolTable,
     SymbolTableNode,
+    TempNode,
     TypeInfo,
     Var,
 )
 from mypy.plugin import DynamicClassDefContext, FunctionContext, MethodContext, Plugin
 from mypy.types import (
+    AnyType,
     CallableType as MypyCallableType,
     Instance,
     NoneType,
     Type,
+    TypeOfAny,
     TypeType,
     UnionType,
     get_proper_type,
 )
 
-PARTIAL_FUNC = "pydantic_plus_plus.partial.partial"
-FROM_MODEL = "pydantic_plus_plus.partial.PartialBaseModel.from_model"
+PARTIAL_FUNC_NAMES = {
+    "pydantic_plus_plus.partial.api.partial",
+    "pydantic_plus_plus.partial.partial",
+}
+FROM_MODEL_NAMES = {
+    "pydantic_plus_plus.partial.api.PartialBaseModel.from_model",
+    "pydantic_plus_plus.partial.PartialBaseModel.from_model",
+}
+ALL_HOOK_NAMES = PARTIAL_FUNC_NAMES | FROM_MODEL_NAMES
+
+_PYDANTIC_INTERNAL_NAMES = frozenset(
+    {
+        "model_config",
+        "model_fields",
+        "model_computed_fields",
+        "model_extra",
+        "model_fields_set",
+        "model_post_init",
+    }
+)
 
 _synthetic_cache: dict[str, TypeInfo] = {}
+
+
+def _extract_field_specs_from_call(call: CallExpr) -> tuple[str, ...] | None:
+    specs: list[str] = []
+    for arg in call.args[1:]:
+        if isinstance(arg, StrExpr):
+            specs.append(arg.value)
+    return tuple(specs) if specs else None
+
+
+def _extract_field_specs_from_hook(ctx: FunctionContext | MethodContext) -> tuple[str, ...] | None:
+    if len(ctx.args) < 2 or not ctx.args[1]:
+        return None
+    specs: list[str] = []
+    for arg_expr in ctx.args[1]:
+        if isinstance(arg_expr, StrExpr):
+            specs.append(arg_expr.value)
+    return tuple(specs) if specs else None
+
+
+def _parse_field_specs(field_specs: tuple[str, ...]) -> tuple[set[str] | None, dict[str, tuple[str, ...]]]:
+    optional_fields: set[str] = set()
+    nested_raw: dict[str, list[str]] = {}
+    is_wildcard = False
+    for spec in field_specs:
+        first, _, rest = spec.partition(".")
+        if not rest:
+            if first == "*":
+                is_wildcard = True
+            else:
+                optional_fields.add(first)
+        else:
+            nested_raw.setdefault(first, []).append(rest)
+    return None if is_wildcard else optional_fields, {k: tuple(v) for k, v in nested_raw.items()}
+
+
+def _has_default_rvalue(stmt: AssignmentStmt) -> bool:
+    rvalue = stmt.rvalue
+    if isinstance(rvalue, TempNode):
+        return False
+    if isinstance(rvalue, CallExpr) and isinstance(rvalue.callee, RefExpr):
+        fullname = rvalue.callee.fullname
+        if fullname and fullname.endswith(".Field"):
+            has_default_kwarg = any(n in ("default", "default_factory") for n in rvalue.arg_names)
+            has_positional_default = bool(rvalue.args) and rvalue.arg_names[0] is None
+            return has_default_kwarg or has_positional_default
+    return True
+
+
+def _get_fields_with_defaults(model_info: TypeInfo) -> frozenset[str]:
+    result: set[str] = set()
+    for base in model_info.mro:
+        if base.fullname in ("builtins.object", "pydantic.main.BaseModel"):
+            continue
+        for stmt in base.defn.defs.body:
+            if not isinstance(stmt, AssignmentStmt) or stmt.type is None:
+                continue
+            if len(stmt.lvalues) != 1 or not isinstance(stmt.lvalues[0], NameExpr):
+                continue
+            if _has_default_rvalue(stmt):
+                result.add(stmt.lvalues[0].name)
+    return frozenset(result)
 
 
 def _make_optional(typ: Type) -> Type:
@@ -57,8 +143,31 @@ def _make_optional(typ: Type) -> Type:
     return UnionType([typ, NoneType()])
 
 
+def _is_optional_type(typ: Type) -> bool:
+    proper = get_proper_type(typ)
+    if isinstance(proper, UnionType):
+        return any(isinstance(t, NoneType) for t in proper.items)
+    return isinstance(proper, NoneType)
+
+
+def _is_basemodel_subclass(info: TypeInfo) -> bool:
+    return any(b.fullname == "pydantic.main.BaseModel" for b in info.mro)
+
+
+def _with_dict_coercion(typ: Type, dict_str_any: Instance) -> Type:
+    proper = get_proper_type(typ)
+    if isinstance(proper, Instance) and _is_basemodel_subclass(proper.type):
+        return UnionType([typ, dict_str_any])
+    if isinstance(proper, UnionType):
+        for item in proper.items:
+            item_proper = get_proper_type(item)
+            if isinstance(item_proper, Instance) and _is_basemodel_subclass(item_proper.type):
+                return UnionType([*proper.items, dict_str_any])
+    return typ
+
+
 def _get_partial_base_info(api: DynamicClassDefContext) -> TypeInfo | None:
-    partial_base_sym = api.api.lookup_fully_qualified_or_none("pydantic_plus_plus.partial.PartialBaseModel")
+    partial_base_sym = api.api.lookup_fully_qualified_or_none("pydantic_plus_plus.partial.api.PartialBaseModel")
     if partial_base_sym is None or not isinstance(partial_base_sym.node, TypeInfo):
         return None
     return partial_base_sym.node
@@ -83,13 +192,50 @@ def _resolve_model_info(call: CallExpr, api: DynamicClassDefContext) -> TypeInfo
     return None
 
 
+def _build_cache_key(model_info: TypeInfo, field_specs: tuple[str, ...] | None) -> str:
+    if field_specs is not None:
+        return f"{model_info.fullname}:{','.join(sorted(field_specs))}"
+    return model_info.fullname
+
+
+def _resolve_nested_partial_type(
+    typ: Type,
+    nested_specs: tuple[str, ...],
+    partial_base_info: TypeInfo,
+    module_name: str,
+    function_type: Instance,
+) -> Type:
+    proper = get_proper_type(typ)
+    if isinstance(proper, Instance):
+        nested_info = _build_partial_typeinfo(
+            proper.type,
+            partial_base_info,
+            module_name,
+            f"Partial{proper.type.name}",
+            nested_specs,
+            function_type=function_type,
+        )
+        return Instance(nested_info, [])
+    if isinstance(proper, UnionType):
+        new_items = [
+            _resolve_nested_partial_type(item, nested_specs, partial_base_info, module_name, function_type)
+            for item in proper.items
+        ]
+        return UnionType(new_items)
+    return typ
+
+
 def _build_partial_typeinfo(
     model_info: TypeInfo,
     partial_base_info: TypeInfo,
     module_name: str,
     assigned_name: str,
+    field_specs: tuple[str, ...] | None = None,
+    *,
+    function_type: Instance | None = None,
+    dict_str_any: Instance | None = None,
 ) -> TypeInfo:
-    cache_key = model_info.fullname
+    cache_key = _build_cache_key(model_info, field_specs)
     if cache_key in _synthetic_cache:
         return _synthetic_cache[cache_key]
 
@@ -101,33 +247,80 @@ def _build_partial_typeinfo(
     info.bases = [Instance(partial_base_info, [Instance(model_info, [])])]
     info.mro = [info] + partial_base_info.mro
 
-    # Walk MRO to collect all fields, including inherited ones
+    optional_fields: set[str] | None
+    nested_specs: dict[str, tuple[str, ...]]
+    if field_specs is not None:
+        optional_fields, nested_specs = _parse_field_specs(field_specs)
+    else:
+        optional_fields = None
+        nested_specs = {}
+
+    original_field_types: dict[str, Type] = {}
     for base in model_info.mro:
         for name, sym in base.names.items():
             if name in info.names:
-                continue  # already added from a more derived class
+                continue
             if not isinstance(sym.node, Var) or sym.node.type is None:
                 continue
-            if name.startswith("_"):
+            if name.startswith("_") or name in _PYDANTIC_INTERNAL_NAMES:
                 continue
 
-            var = Var(name, _make_optional(sym.node.type))
+            original_type = sym.node.type
+            is_terminal = optional_fields is None or name in optional_fields
+            nested = nested_specs.get(name)
+
+            if nested is not None and function_type is not None:
+                field_type = _resolve_nested_partial_type(
+                    original_type,
+                    nested,
+                    partial_base_info,
+                    module_name,
+                    function_type,
+                )
+                if is_terminal:
+                    field_type = _make_optional(field_type)
+            elif is_terminal:
+                field_type = _make_optional(original_type)
+            else:
+                field_type = original_type
+
+            if field_type is not original_type:
+                original_field_types[name] = original_type
+
+            var = Var(name, field_type)
             var.info = info
             var._fullname = f"{info.fullname}.{name}"
             var.is_initialized_in_class = True
             info.names[name] = SymbolTableNode(MDEF, var)
 
     _synthetic_cache[cache_key] = info
+
+    if function_type is not None and "__init__" not in info.names:
+        _add_init(info, function_type, _get_fields_with_defaults(model_info), dict_str_any, original_field_types)
+
     return info
 
 
-def _add_init(info: TypeInfo, function_type: Instance) -> None:
+def _add_init(
+    info: TypeInfo,
+    function_type: Instance,
+    fields_with_defaults: frozenset[str] = frozenset(),
+    dict_str_any: Instance | None = None,
+    original_field_types: dict[str, Type] | None = None,
+) -> None:
     self_type = Instance(info, [])
-
     args = [Argument(Var("self"), self_type, None, ARG_POS)]
     for name, sym in info.names.items():
         if isinstance(sym.node, Var) and sym.node.type is not None:
-            args.append(Argument(Var(name), sym.node.type, None, ARG_NAMED_OPT))
+            param_type = sym.node.type
+            original = original_field_types.get(name) if original_field_types else None
+            if original is not None:
+                param_type = UnionType([param_type, original])
+            if dict_str_any is not None:
+                param_type = _with_dict_coercion(param_type, dict_str_any)
+            is_init_optional = _is_optional_type(sym.node.type) or name in fields_with_defaults
+            arg_kind = ARG_NAMED_OPT if is_init_optional else ARG_NAMED
+            args.append(Argument(Var(name), param_type, None, arg_kind))
 
     arg_types = [arg.type_annotation for arg in args]
     arg_kinds = [arg.kind for arg in args]
@@ -159,11 +352,24 @@ def _dynamic_class_callback(ctx: DynamicClassDefContext) -> None:
     if caller_module is None:
         return
 
-    info = _build_partial_typeinfo(model_info, partial_base_info, caller_module.fullname, ctx.name)
-
-    if "__init__" not in info.names:
-        function_type = ctx.api.named_type("builtins.function", [])
-        _add_init(info, function_type)
+    field_specs = _extract_field_specs_from_call(call)
+    function_type = ctx.api.named_type("builtins.function", [])
+    dict_str_any = ctx.api.named_type(
+        "builtins.dict",
+        [
+            ctx.api.named_type("builtins.str", []),
+            AnyType(TypeOfAny.explicit),
+        ],
+    )
+    info = _build_partial_typeinfo(
+        model_info,
+        partial_base_info,
+        caller_module.fullname,
+        ctx.name,
+        field_specs,
+        function_type=function_type,
+        dict_str_any=dict_str_any,
+    )
 
     caller_module.names[ctx.name] = SymbolTableNode(GDEF, info)
 
@@ -198,7 +404,9 @@ def _function_hook_callback(ctx: FunctionContext | MethodContext) -> Type:
     if model_info is None:
         return ctx.default_return_type
 
-    cache_key = model_info.fullname
+    field_specs = _extract_field_specs_from_hook(ctx)
+    cache_key = _build_cache_key(model_info, field_specs)
+
     if cache_key in _synthetic_cache:
         info = _synthetic_cache[cache_key]
         return TypeType(Instance(info, []))
@@ -208,28 +416,40 @@ def _function_hook_callback(ctx: FunctionContext | MethodContext) -> Type:
         return ctx.default_return_type
 
     assigned_name = f"Partial{model_info.name}"
-    info = _build_partial_typeinfo(model_info, partial_base_info, model_info.module_name, assigned_name)
-
-    if "__init__" not in info.names:
-        function_type = ctx.api.named_generic_type("builtins.function", [])
-        _add_init(info, function_type)
+    function_type = ctx.api.named_generic_type("builtins.function", [])
+    dict_str_any = ctx.api.named_generic_type(
+        "builtins.dict",
+        [
+            ctx.api.named_generic_type("builtins.str", []),
+            AnyType(TypeOfAny.explicit),
+        ],
+    )
+    info = _build_partial_typeinfo(
+        model_info,
+        partial_base_info,
+        model_info.module_name,
+        assigned_name,
+        field_specs,
+        function_type=function_type,
+        dict_str_any=dict_str_any,
+    )
 
     return TypeType(Instance(info, []))
 
 
 class PydanticPlusPlusPlugin(Plugin):
     def get_dynamic_class_hook(self, fullname: str) -> Callable[[DynamicClassDefContext], None] | None:
-        if fullname in (PARTIAL_FUNC, FROM_MODEL):
+        if fullname in ALL_HOOK_NAMES:
             return _dynamic_class_callback
         return None
 
     def get_function_hook(self, fullname: str) -> Callable[[FunctionContext], Type] | None:
-        if fullname == PARTIAL_FUNC:
+        if fullname in PARTIAL_FUNC_NAMES:
             return _function_hook_callback
         return None
 
     def get_method_hook(self, fullname: str) -> Callable[[MethodContext], Type] | None:
-        if fullname == FROM_MODEL:
+        if fullname in FROM_MODEL_NAMES:
             return _function_hook_callback  # type: ignore[return-value]
         return None
 
