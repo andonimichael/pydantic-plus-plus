@@ -6,6 +6,10 @@
 
 Pydantic++ is a suite of utilities to improve upon the core [Pydantic](https://github.com/pydantic/pydantic) library. We stand on the shoulders of giants here. Huge kudos to the Pydantic team for all their hard work building an amazing product.
 
+## Utilities
+
+- [Partial Models](#partial-models) — type-safe "partial" Pydantic models where some or all fields are optional
+
 ## Installation
 
 ```bash
