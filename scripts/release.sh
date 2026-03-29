@@ -27,6 +27,7 @@ esac
 NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 
 sed -i'' -e "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" "$PYPROJECT"
+uv lock
 
 echo "Bumped version: ${CURRENT} -> ${NEW_VERSION}"
 

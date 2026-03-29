@@ -33,6 +33,8 @@ jobs:
         with:
           token: ${{ secrets.PYDANTIC_PLUS_PLUS_RELEASE_PAT }}
 
+      - uses: astral-sh/setup-uv@v7
+
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
@@ -47,7 +49,7 @@ jobs:
       - name: Commit and tag
         run: |
           TAG="v${{ steps.bump.outputs.new_version }}"
-          git add pyproject.toml
+          git add pyproject.toml uv.lock
           git commit -m "$(cat <<EOF
           Release ${TAG}
 
