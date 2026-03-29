@@ -57,13 +57,16 @@ utilities, and how to use them.
 
 ```
 src/pydantic_plus_plus/
-  __init__.py       # Public exports: PartialBaseModel, partial, dummy, errors
+  __init__.py       # Public exports
   partial/
     __init__.py     # Re-exports from api.py
     api.py          # Public API: PartialBaseModel, partial()
   dummy/
     __init__.py     # Re-exports from api.py and errors.py
     api.py          # Public API: dummy()
+  registry/
+    __init__.py     # Re-exports from api.py and errors.py
+    api.py          # Public API: ModelRegistry
   mypy/
     plugin.py       # Mypy plugin for type-safe partial() calls
 tests/
