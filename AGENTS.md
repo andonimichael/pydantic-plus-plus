@@ -41,6 +41,9 @@ utilities, and how to use them.
   Any non-public module should be prefixed with an underscore. Even in our
   non-public modules you should think about what is "package private" and what
   is truly private to just that module (again, prefixed with an underscore).
+- **Public API Goes First** - Your public API should be at the top of your
+  files. That is where readers will start. And your public API should always
+  have docstrings and proper documentation.
 
 ### Python
 
@@ -67,8 +70,13 @@ src/pydantic_plus_plus/
   registry/
     __init__.py     # Re-exports from api.py and errors.py
     api.py          # Public API: ModelRegistry
+  update/
+    __init__.py     # Re-exports from api.py and errors.py
+    api.py          # Public API: update(), ModelUpdater
   mypy/
-    plugin.py       # Mypy plugin for type-safe partial() calls
+    plugin.py       # Mypy plugin entrypoint
+    _partial.py     # Mypy hooks for partial() / PartialBaseModel
+    _update.py      # Mypy hooks for ModelUpdater methods
 tests/
 examples/
 pyproject.toml
@@ -88,12 +96,34 @@ uv sync --group dev
 - Partial model tests should call `_clear_cache()` in fixtures to reset the
   model cache between tests.
 
+## Update Module
+
+The update module (`src/pydantic_plus_plus/update/`) provides `update()` and
+`ModelUpdater` — an immutable builder for type-safe model updates. Key points:
+
+- **Immutable builder** — every method returns a new `ModelUpdater`.
+- **Operations**: `set`, `append`, `extend`, `remove`, `set_item`, `set_path`.
+- **Polymorphic operations** — each operation is a frozen Pydantic `BaseModel`
+  subclass of `Operation(ABC, BaseModel)` with its own `apply()` method.
+- **Nested updates** — `set()` accepts dicts (deep-merged) or `ModelUpdater`
+  instances for nested model fields.
+- **`raise_on_missing`** — constructor flag that controls whether `remove()`
+  raises on missing elements/keys.
+
 ## Mypy Plugin
 
-The mypy plugin (`src/pydantic_plus_plus/mypy/plugin.py`) provides type safety
-for `partial()` and `PartialBaseModel.from_model()`. Changes to the public API
-or partial model construction almost always require corresponding plugin
-updates. Run the mypy plugin tests after any change:
+The mypy plugin (`src/pydantic_plus_plus/mypy/`) provides type safety for
+`partial()`, `PartialBaseModel.from_model()`, and `ModelUpdater` methods. It is
+split into:
+
+- `plugin.py` — plugin entrypoint, dispatches hooks
+- `_partial.py` — synthesizes `TypeInfo` for partial models
+- `_update.py` — synthesizes typed method signatures for `ModelUpdater`
+  (uses `get_method_signature_hook` to replace `**kwargs: Any` with typed
+  kwargs based on the model's fields)
+
+Changes to the public API of partial or update almost always require
+corresponding plugin updates. Run the mypy plugin tests after any change:
 
 ```bash
 uv run pytest tests/mypy/

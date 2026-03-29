@@ -1,0 +1,235 @@
+- case: update_set_accepts_valid_fields
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    user = User(name="Alice", age=30)
+    update(user).set(name="Bob")
+    update(user).set(name="Bob", age=31)
+
+- case: update_set_rejects_nonexistent_field
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+
+    user = User(name="Alice")
+    update(user).set(nonexistent="value")  # E: Unexpected keyword argument "nonexistent"  [call-arg]
+
+- case: update_set_rejects_wrong_type
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    user = User(name="Alice", age=30)
+    update(user).set(age="not_an_int")  # E: Argument "age" has incompatible type "str"; expected "int"  [arg-type]
+
+- case: update_set_nested_model_accepts_dict
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class Address(BaseModel):
+        street: str
+        city: str
+
+    class User(BaseModel):
+        name: str
+        address: Address
+
+    user = User(name="Alice", address=Address(street="1st", city="NYC"))
+    update(user).set(address={"city": "LA"})
+
+- case: update_set_nested_model_accepts_updater
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class Address(BaseModel):
+        street: str
+        city: str
+
+    class User(BaseModel):
+        name: str
+        address: Address
+
+    user = User(name="Alice", address=Address(street="1st", city="NYC"))
+    update(user).set(address=update(user.address).set(city="LA"))
+
+- case: update_apply_returns_original_type
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    user = User(name="Alice", age=30)
+    result = update(user).set(name="Bob").apply()
+    reveal_type(result)  # N: Revealed type is "main.User"
+
+- case: update_append_accepts_element_type
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        tags: list[str]
+
+    user = User(name="Alice", tags=[])
+    update(user).append(tags="new_tag")
+
+- case: update_append_rejects_wrong_element_type
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        tags: list[str]
+
+    user = User(name="Alice", tags=[])
+    update(user).append(tags=123)  # E: Argument "tags" has incompatible type "int"; expected "str"  [arg-type]
+
+- case: update_append_rejects_non_sequence_field
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        tags: list[str]
+
+    user = User(name="Alice", tags=[])
+    update(user).append(name="value")  # E: Unexpected keyword argument "name"  [call-arg]
+
+- case: update_extend_accepts_list_of_element_type
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        tags: list[str]
+
+    user = User(name="Alice", tags=[])
+    update(user).extend(tags=["a", "b"])
+
+- case: update_remove_accepts_element_for_sequence
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        tags: list[str]
+        metadata: dict[str, str]
+
+    user = User(tags=["a"], metadata={"k": "v"})
+    update(user).remove(tags="a")
+    update(user).remove(metadata="k")
+
+- case: update_set_item_accepts_dict
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        metadata: dict[str, str]
+
+    user = User(metadata={})
+    update(user).set_item(metadata={"key": "value"})
+
+- case: update_set_item_rejects_non_dict_field
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        metadata: dict[str, str]
+
+    user = User(name="Alice", metadata={})
+    update(user).set_item(name={"key": "value"})  # E: Unexpected keyword argument "name"  [call-arg]
+
+- case: update_chained_operations
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        age: int
+        tags: list[str]
+
+    user = User(name="Alice", age=30, tags=[])
+    result = update(user).set(name="Bob").append(tags="vip").apply()
+    reveal_type(result)  # N: Revealed type is "main.User"
+
+- case: update_set_optional_field_accepts_none
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from typing import Optional
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        nickname: Optional[str] = None
+
+    user = User(name="Alice")
+    update(user).set(nickname=None)
+
+- case: update_set_required_field_rejects_none
+  mypy_config: |
+    plugins = pydantic_plus_plus.mypy
+  main: |
+    from pydantic import BaseModel
+    from pydantic_plus_plus.update import update
+
+    class User(BaseModel):
+        name: str
+        age: int
+
+    user = User(name="Alice", age=30)
+    update(user).set(name=None)  # E: Argument "name" has incompatible type "None"; expected "str"  [arg-type]
