@@ -9,9 +9,10 @@ Pydantic++ is a suite of utilities to improve upon the core [Pydantic](https://g
 ## Utilities
 
 - [Partial Models](#partial-models) — type-safe "partial" Pydantic models where some or all fields are optional
-- [Model Updater](#model-updates) — type-safe builder for updating model instances
-- [Dummy Models](#dummy-models) — generate fake model instances with random data for testing
+- [Model Updater](#model-updates) — type-safe immutable builder for updating model instances
+- [Dummy Models](#dummy-models) — generate dummy model instances with random data for testing
 - [Model Registry](#model-registry) — discover all BaseModel subclasses in a module tree
+- [MyPy Plugin](#mypy-plugin) — full `mypy` integration for partial models and model updates
 
 ## Installation
 
