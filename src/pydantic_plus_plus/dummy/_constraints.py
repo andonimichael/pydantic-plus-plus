@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import string
-import types
 from decimal import Decimal
 from random import Random
-from typing import Any, Union, get_args, get_origin
+from typing import Any
 
 from pydantic import BaseModel
-from pydantic_core import PydanticUndefined
 
+from pydantic_plus_plus.reflection import has_default_value, is_optional
 from pydantic_plus_plus.dummy.errors import InvalidFieldError
 
 
@@ -18,10 +17,7 @@ def validate_optional_fields(model: type[BaseModel], field_names: set[str]) -> N
             raise InvalidFieldError(f"Field '{field_name}' does not exist on {model.__name__}")
 
         field_info = model.model_fields[field_name]
-        annotation = field_info.annotation
-        is_union = isinstance(annotation, types.UnionType) or get_origin(annotation) is Union
-        has_none_type = is_union and type(None) in get_args(annotation)
-        if not has_none_type:
+        if not is_optional(field_info.annotation):
             raise InvalidFieldError(f"Field '{field_name}' on {model.__name__} is not Optional")
 
 
@@ -31,9 +27,7 @@ def validate_defaultable_fields(model: type[BaseModel], field_names: set[str]) -
             raise InvalidFieldError(f"Field '{field_name}' does not exist on {model.__name__}")
 
         field_info = model.model_fields[field_name]
-        has_default = field_info.default is not PydanticUndefined
-        has_default_factory = field_info.default_factory is not None
-        if not has_default and not has_default_factory:
+        if not has_default_value(field_info):
             raise InvalidFieldError(f"Field '{field_name}' on {model.__name__} has no default value")
 
 

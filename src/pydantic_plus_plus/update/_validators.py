@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from pydantic_plus_plus.update._reflection import get_field_annotation, is_dict_type, is_sequence_type
+from pydantic_plus_plus.reflection import get_field_annotation, is_dict_type, is_collection_type
 from pydantic_plus_plus.update.errors import FieldNotFoundError, InvalidOperationError
 
 
@@ -17,7 +17,7 @@ def validate_sequence_field(model: BaseModel, field: str) -> None:
     validate_field_exists(model, field)
     model_type = type(model)
     annotation = get_field_annotation(model_type, field)
-    if not is_sequence_type(annotation):
+    if not is_collection_type(annotation):
         raise InvalidOperationError(f"'{field}' is not a sequence type on {model_type.__name__}")
 
 
@@ -33,5 +33,5 @@ def validate_removable_field(model: BaseModel, field: str) -> None:
     validate_field_exists(model, field)
     model_type = type(model)
     annotation = get_field_annotation(model_type, field)
-    if not is_sequence_type(annotation) and not is_dict_type(annotation):
+    if not is_collection_type(annotation) and not is_dict_type(annotation):
         raise InvalidOperationError(f"'{field}' is not a sequence or dict type on {model_type.__name__}")

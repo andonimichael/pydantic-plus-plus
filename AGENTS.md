@@ -77,6 +77,7 @@ src/pydantic_plus_plus/
     plugin.py       # Mypy plugin entrypoint
     _partial.py     # Mypy hooks for partial() / PartialBaseModel
     _update.py      # Mypy hooks for ModelUpdater methods
+  reflection/       # A suite of reflection utilities for working with Pydantic
 tests/
 examples/
 pyproject.toml

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Sequence
+from typing import Any, Sequence, cast
 
 from pydantic import BaseModel, ConfigDict
 
 from pydantic_plus_plus.partial._merge import deep_merge
-from pydantic_plus_plus.update._reflection import (
+from pydantic_plus_plus.reflection import (
     get_field_annotation,
     is_base_model_type,
     unwrap_optional,
@@ -33,14 +33,14 @@ class SetOp(Operation):
 
         if isinstance(value, ModelUpdater):
             current_value = data.get(self.field)
-            unwrapped = unwrap_optional(annotation)
-            if isinstance(unwrapped, type) and issubclass(unwrapped, BaseModel) and isinstance(current_value, dict):
+            if is_base_model_type(annotation) and isinstance(current_value, dict):
+                unwrapped = cast(type[BaseModel], unwrap_optional(annotation))
                 current_instance = unwrapped.model_validate(current_value)
                 resolved = value.apply_to(current_instance)
                 data[self.field] = resolved.model_dump()
             else:
                 data[self.field] = value
-        elif isinstance(value, dict) and is_base_model_type(annotation):
+        elif is_base_model_type(annotation) and isinstance(value, dict):
             current_value = data.get(self.field)
             if isinstance(current_value, dict):
                 data[self.field] = deep_merge(current_value, value)

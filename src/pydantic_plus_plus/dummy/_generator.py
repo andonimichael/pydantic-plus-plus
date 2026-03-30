@@ -6,12 +6,12 @@ import uuid
 from decimal import Decimal
 from enum import Enum
 from random import Random
-from typing import Any, Callable, Literal, TypeVar, Union, cast, get_args, get_origin
+from typing import Any, Literal, TypeVar, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
-from pydantic_core import PydanticUndefined
 
+from pydantic_plus_plus.reflection import has_default_value, is_base_model_type, is_optional, get_default_value
 from pydantic_plus_plus.dummy._constraints import (
     generate_constrained_decimal,
     generate_constrained_float,
@@ -52,11 +52,7 @@ class DummyGenerator:
             return None
 
         if self._should_use_default(field_name, field_info):
-            if field_info.default_factory is not None:
-                factory = cast(Callable[[], Any], field_info.default_factory)
-                return factory()
-            else:
-                return field_info.default
+            return get_default_value(field_info)
 
         annotation = field_info.annotation
         metadata = list(field_info.metadata) if field_info.metadata else []
@@ -143,26 +139,15 @@ class DummyGenerator:
 
         raise UnsupportedTypeError(f"Cannot generate value for generic type: {origin.__name__}")
 
-    def is_optional_annotation(self, annotation: object) -> bool:
-        if isinstance(annotation, types.UnionType) or get_origin(annotation) is Union:
-            return type(None) in get_args(annotation)
-        return False
-
     def _should_use_none(self, field_name: str, field_info: FieldInfo) -> bool:
         if isinstance(self._set_nones, bool):
-            return self._set_nones and self.is_optional_annotation(field_info.annotation)
+            return self._set_nones and is_optional(field_info.annotation)
         return field_name in self._set_nones
-
-    def _has_default(self, field_info: FieldInfo) -> bool:
-        return field_info.default is not PydanticUndefined or field_info.default_factory is not None
 
     def _should_use_default(self, field_name: str, field_info: FieldInfo) -> bool:
         if isinstance(self._set_defaults, bool):
-            return self._set_defaults and self._has_default(field_info)
+            return self._set_defaults and has_default_value(field_info)
         return field_name in self._set_defaults
-
-    def _is_model_type(self, annotation: Any) -> bool:
-        return isinstance(annotation, type) and issubclass(annotation, BaseModel)
 
     def _at_generation_boundary(self, model_type: type[Any]) -> bool:
         return model_type in self._ancestors or self._depth >= _MAX_RECURSION_DEPTH
@@ -172,7 +157,7 @@ class DummyGenerator:
             return []
 
         element_type = args[0]
-        if self._is_model_type(element_type) and self._at_generation_boundary(element_type):
+        if is_base_model_type(element_type) and self._at_generation_boundary(element_type):
             return []
 
         length = resolve_collection_length(self._random, metadata)
@@ -183,7 +168,7 @@ class DummyGenerator:
             return {}
 
         key_type, value_type = args[0], args[1]
-        if self._is_model_type(value_type) and self._at_generation_boundary(value_type):
+        if is_base_model_type(value_type) and self._at_generation_boundary(value_type):
             return {}
 
         length = resolve_collection_length(self._random, metadata)
@@ -194,7 +179,7 @@ class DummyGenerator:
             return set()
 
         element_type = args[0]
-        if self._is_model_type(element_type) and self._at_generation_boundary(element_type):
+        if is_base_model_type(element_type) and self._at_generation_boundary(element_type):
             return set()
 
         length = resolve_collection_length(self._random, metadata)
