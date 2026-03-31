@@ -211,15 +211,6 @@ class DummyGenerator:
         )
         return nested.generate(model)
 
-    def _generate_datetime(self) -> datetime.datetime:
-        year = self._random.randint(2000, 2030)
-        month = self._random.randint(1, 12)
-        day = self._random.randint(1, 28)
-        hour = self._random.randint(0, 23)
-        minute = self._random.randint(0, 59)
-        second = self._random.randint(0, 59)
-        return datetime.datetime(year, month, day, hour, minute, second)
-
     def _generate_date(self) -> datetime.date:
         year = self._random.randint(2000, 2030)
         month = self._random.randint(1, 12)
@@ -231,3 +222,8 @@ class DummyGenerator:
         minute = self._random.randint(0, 59)
         second = self._random.randint(0, 59)
         return datetime.time(hour, minute, second)
+
+    def _generate_datetime(self) -> datetime.datetime:
+        date = self._generate_date()
+        time = self._generate_time()
+        return datetime.datetime.combine(date, time)

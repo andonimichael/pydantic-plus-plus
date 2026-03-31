@@ -5,7 +5,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from pydantic_plus_plus.dummy._constraints import validate_defaultable_fields, validate_optional_fields
+from pydantic_plus_plus.dummy._validators import validate_defaultable_fields, validate_optional_fields
 from pydantic_plus_plus.dummy._generator import DummyGenerator
 
 T = TypeVar("T", bound=BaseModel)
