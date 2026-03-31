@@ -4,17 +4,19 @@ import importlib
 import inspect
 import pkgutil
 from types import ModuleType
-from typing import Union
+from typing import TypeVar, Union
+
+T = TypeVar("T")
 
 
 def scan_modules(
     modules: tuple[Union[str, ModuleType], ...],
-    base: type,
+    base: type[T],
     *,
     include_base: bool,
     include_abstract: bool,
-) -> frozenset[type]:
-    found: set[type] = set()
+) -> frozenset[type[T]]:
+    found: set[type[T]] = set()
     for module_ref in modules:
         found.update(_walk_module(module_ref, base, include_base=include_base, include_abstract=include_abstract))
     return frozenset(found)
@@ -22,12 +24,12 @@ def scan_modules(
 
 def _walk_module(
     module_ref: Union[str, ModuleType],
-    base: type,
+    base: type[T],
     *,
     include_base: bool,
     include_abstract: bool,
-) -> set[type]:
-    found: set[type] = set()
+) -> set[type[T]]:
+    found: set[type[T]] = set()
     root = _import_module(module_ref)
     found.update(_collect_classes(root, base, include_base=include_base, include_abstract=include_abstract))
 
@@ -53,8 +55,8 @@ def _import_module(module: Union[str, ModuleType]) -> ModuleType:
     return module
 
 
-def _collect_classes(module: ModuleType, base: type, *, include_base: bool, include_abstract: bool) -> set[type]:
-    found: set[type] = set()
+def _collect_classes(module: ModuleType, base: type[T], *, include_base: bool, include_abstract: bool) -> set[type[T]]:
+    found: set[type[T]] = set()
     for _name, obj in inspect.getmembers(module, inspect.isclass):
         if not issubclass(obj, base):
             continue

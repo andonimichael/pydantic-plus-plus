@@ -94,9 +94,10 @@ class TestGet:
         registry: ModelRegistry[BaseModel] = ModelRegistry(BASIC_PKG)
         assert registry.get("Nonexistent") is None
 
-    def test_returns_none_for_ambiguous(self) -> None:
+    def test_raises_for_ambiguous(self) -> None:
         registry: ModelRegistry[BaseModel] = ModelRegistry(AMBIGUOUS_PKG)
-        assert registry.get("SharedName") is None
+        with pytest.raises(AmbiguousModelError):
+            registry.get("SharedName")
 
     def test_returns_model_when_unambiguous(self) -> None:
         registry: ModelRegistry[BaseModel] = ModelRegistry(BASIC_PKG)
@@ -130,6 +131,11 @@ class TestCollectionProtocol:
     def test_contains_returns_false_for_missing(self) -> None:
         registry: ModelRegistry[BaseModel] = ModelRegistry(BASIC_PKG)
         assert "Nonexistent" not in registry
+
+    def test_contains_raises_for_ambiguous(self) -> None:
+        registry: ModelRegistry[BaseModel] = ModelRegistry(AMBIGUOUS_PKG)
+        with pytest.raises(AmbiguousModelError):
+            registry.__contains__("SharedName")
 
 
 class TestFilter:

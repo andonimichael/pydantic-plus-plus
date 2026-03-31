@@ -56,12 +56,14 @@ class ModelRegistry(Generic[T]):
         base: type[T] = BaseModel,  # type: ignore[assignment]
         include_base: bool = False,
         include_abstract: bool = False,
+        _models: frozenset[type[T]] | None = None,
     ) -> None:
         self._modules = modules
         self._base = base
-        self._include_base = include_base
-        self._include_abstract = include_abstract
-        self._models = scan_modules(modules, base, include_base=include_base, include_abstract=include_abstract)
+        if _models is not None:
+            self._models = _models
+        else:
+            self._models = scan_modules(modules, base, include_base=include_base, include_abstract=include_abstract)
         self._short_name_index: dict[str, list[type[T]]] = defaultdict(list)
         self._qualified_name_index: dict[str, type[T]] = {}
         self._build_indexes()
@@ -70,26 +72,13 @@ class ModelRegistry(Generic[T]):
         for model in self._models:
             short_name = model.__name__
             qualified_name = f"{model.__module__}.{model.__qualname__}"
-            self._short_name_index[short_name].append(model)  # type: ignore[arg-type]
-            self._qualified_name_index[qualified_name] = model  # type: ignore[assignment]
-
-    @classmethod
-    def _from_models(cls, models: frozenset[type[T]], base: type[T]) -> ModelRegistry[T]:
-        instance: ModelRegistry[T] = object.__new__(cls)
-        instance._modules = ()
-        instance._base = base
-        instance._include_base = False
-        instance._include_abstract = False
-        instance._models = models
-        instance._short_name_index = defaultdict(list)
-        instance._qualified_name_index = {}
-        instance._build_indexes()
-        return instance
+            self._short_name_index[short_name].append(model)
+            self._qualified_name_index[qualified_name] = model
 
     @property
     def models(self) -> frozenset[type[T]]:
         """All discovered model classes."""
-        return self._models  # type: ignore[return-value]
+        return self._models
 
     @property
     def base(self) -> type[T]:
@@ -125,28 +114,34 @@ class ModelRegistry(Generic[T]):
         return candidates[0]
 
     def get(self, name: str) -> type[T] | None:
-        """Look up a model by name, returning ``None`` if not found or ambiguous."""
+        """Look up a model by name, returning ``None`` if not found."""
         try:
             return self[name]
-        except (ModelNotFoundError, AmbiguousModelError):
+        except ModelNotFoundError:
             return None
 
     def __len__(self) -> int:
         return len(self._models)
 
     def __iter__(self) -> Iterator[type[T]]:
-        return iter(self._models)  # type: ignore[arg-type]
+        return iter(self._models)
 
     def __contains__(self, item: object) -> bool:
         if isinstance(item, str):
             if item in self._qualified_name_index:
                 return True
-            return item in self._short_name_index
+            candidates = self._short_name_index.get(item)
+            if candidates is None:
+                return False
+            if len(candidates) > 1:
+                qualified_names = [f"{cls.__module__}.{cls.__qualname__}" for cls in candidates]
+                raise AmbiguousModelError(f"'{item}' matches multiple models: {', '.join(sorted(qualified_names))}")
+            return True
         if isinstance(item, type):
             return item in self._models
         return False
 
     def filter(self, predicate: Callable[[type[T]], bool]) -> ModelRegistry[T]:
         """Return a new registry containing only models that satisfy *predicate*."""
-        filtered = frozenset(model for model in self._models if predicate(model))  # type: ignore[arg-type]
-        return ModelRegistry._from_models(filtered, self._base)
+        filtered = frozenset(model for model in self._models if predicate(model))
+        return ModelRegistry(base=self._base, _models=filtered)  # type: ignore[call-overload, no-any-return]
