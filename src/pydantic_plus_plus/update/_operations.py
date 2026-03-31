@@ -5,7 +5,7 @@ from typing import Any, Sequence, cast
 
 from pydantic import BaseModel, ConfigDict
 
-from pydantic_plus_plus.partial._merge import deep_merge
+from pydantic_plus_plus.update._merge import deep_merge
 from pydantic_plus_plus.reflection import (
     get_field_annotation,
     is_base_model_type,
@@ -94,7 +94,7 @@ class RemoveOp(Operation):
                 raise FieldNotFoundError(f"Key {self.target!r} not found in '{self.field}'")
 
 
-class SetItemOp(Operation):
+class MergeItemsOp(Operation):
     field: str
     items: dict[str, Any]
 

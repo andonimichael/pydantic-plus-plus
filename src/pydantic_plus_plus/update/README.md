@@ -64,11 +64,11 @@ user = User(tags=["a"], scores={1}, metadata={"role": "viewer"})
 
 updated = (
     update(user)
-    .append(tags="b")                       # tags: ["a", "b"]
-    .extend(scores=[2, 3])                  # scores: {1, 2, 3}
-    .set_item(metadata={"tier": "premium"}) # metadata: {"role": "viewer", "tier": "premium"}
-    .remove(tags="a")                       # tags: ["b"]
-    .remove(metadata="role")                # metadata: {"tier": "premium"}
+    .append(tags="b")                          # tags: ["a", "b"]
+    .extend(scores=[2, 3])                     # scores: {1, 2, 3}
+    .merge_items(metadata={"tier": "premium"}) # metadata: {"role": "viewer", "tier": "premium"}
+    .remove(tags="a")                          # tags: ["b"]
+    .remove(metadata="role")                   # metadata: {"tier": "premium"}
     .apply()
 )
 ```
@@ -78,7 +78,7 @@ updated = (
 | `.append()` | `list`, `set`, `frozenset` | Single element |
 | `.extend()` | `list`, `set`, `frozenset` | Multiple elements |
 | `.remove()` | `list`, `set`, `frozenset`, `dict` | Element (sequences) or key (dicts) |
-| `.set_item()` | `dict` | A `dict` to merge into the field |
+| `.merge_items()` | `dict` | A `dict` to merge into the field |
 
 ## Dot-Path Escape Hatch
 

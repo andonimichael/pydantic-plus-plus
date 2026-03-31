@@ -162,7 +162,7 @@
     update(user).remove(tags="a")
     update(user).remove(metadata="k")
 
-- case: update_set_item_accepts_dict
+- case: update_merge_items_accepts_dict
   mypy_config: |
     plugins = pydantic_plus_plus.mypy
   main: |
@@ -173,9 +173,9 @@
         metadata: dict[str, str]
 
     user = User(metadata={})
-    update(user).set_item(metadata={"key": "value"})
+    update(user).merge_items(metadata={"key": "value"})
 
-- case: update_set_item_rejects_non_dict_field
+- case: update_merge_items_rejects_non_dict_field
   mypy_config: |
     plugins = pydantic_plus_plus.mypy
   main: |
@@ -187,7 +187,7 @@
         metadata: dict[str, str]
 
     user = User(name="Alice", metadata={})
-    update(user).set_item(name={"key": "value"})  # E: Unexpected keyword argument "name"  [call-arg]
+    update(user).merge_items(name={"key": "value"})  # E: Unexpected keyword argument "name"  [call-arg]
 
 - case: update_chained_operations
   mypy_config: |

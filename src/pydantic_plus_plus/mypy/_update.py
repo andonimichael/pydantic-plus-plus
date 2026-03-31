@@ -56,14 +56,14 @@ REMOVE_METHOD_NAMES = frozenset(
     }
 )
 
-SET_ITEM_METHOD_NAMES = frozenset(
+MERGE_ITEMS_METHOD_NAMES = frozenset(
     {
-        "pydantic_plus_plus.update.api.ModelUpdater.set_item",
+        "pydantic_plus_plus.update.api.ModelUpdater.merge_items",
     }
 )
 
 ALL_METHOD_SIGNATURE_NAMES = (
-    SET_METHOD_NAMES | APPEND_METHOD_NAMES | EXTEND_METHOD_NAMES | REMOVE_METHOD_NAMES | SET_ITEM_METHOD_NAMES
+    SET_METHOD_NAMES | APPEND_METHOD_NAMES | EXTEND_METHOD_NAMES | REMOVE_METHOD_NAMES | MERGE_ITEMS_METHOD_NAMES
 )
 
 
@@ -139,7 +139,7 @@ def remove_signature_callback(ctx: MethodSigContext) -> MypyCallableType:
     return _copy_with_expanded_kwargs(ctx, kwargs)
 
 
-def set_item_signature_callback(ctx: MethodSigContext) -> MypyCallableType:
+def merge_items_signature_callback(ctx: MethodSigContext) -> MypyCallableType:
     model_info = _extract_model_info(ctx)
     if model_info is None:
         return ctx.default_signature

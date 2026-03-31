@@ -15,7 +15,7 @@ from pydantic_plus_plus.update._operations import (
     ExtendOp,
     Operation,
     RemoveOp,
-    SetItemOp,
+    MergeItemsOp,
     SetOp,
     SetPathOp,
 )
@@ -28,9 +28,9 @@ class ModelUpdater(Generic[T]):
     """A builder for type-safe updates to Pydantic ``BaseModel`` instances.
 
     ``ModelUpdater`` accumulates update operations (set, append, extend,
-    set_item, remove, set_path) and applies them all at once via :meth:`apply`,
-    returning a new model instance. This class is immutable -- every mutation
-     method returns a **new** ``ModelUpdater``.
+    merge_items, remove, set_path) and applies them all at once via
+    :meth:`apply`, returning a new model instance. This class is immutable --
+    every mutation method returns a **new** ``ModelUpdater``.
 
     Use the :func:`update` function as the primary entry point::
 
@@ -56,7 +56,7 @@ class ModelUpdater(Generic[T]):
         self._raise_on_missing = raise_on_missing
 
     @classmethod
-    def with_operation(cls, updater: ModelUpdater[T], operation: Operation) -> ModelUpdater[T]:
+    def _with_operation(cls, updater: ModelUpdater[T], operation: Operation) -> ModelUpdater[T]:
         new: ModelUpdater[T] = object.__new__(cls)
         new._instance = updater._instance
         new._operations = updater._operations + (operation,)
@@ -81,7 +81,7 @@ class ModelUpdater(Generic[T]):
         result = self
         for field, value in kwargs.items():
             validate_field_exists(result.instance, field)
-            result = ModelUpdater.with_operation(result, SetOp(field=field, value=value))
+            result = ModelUpdater._with_operation(result, SetOp(field=field, value=value))
         return result
 
     def append(self, **kwargs: Any) -> ModelUpdater[T]:
@@ -93,7 +93,7 @@ class ModelUpdater(Generic[T]):
         result = self
         for field, item in kwargs.items():
             validate_sequence_field(result.instance, field)
-            result = ModelUpdater.with_operation(result, AppendOp(field=field, item=item))
+            result = ModelUpdater._with_operation(result, AppendOp(field=field, item=item))
         return result
 
     def extend(self, **kwargs: Any) -> ModelUpdater[T]:
@@ -105,10 +105,10 @@ class ModelUpdater(Generic[T]):
         result = self
         for field, items in kwargs.items():
             validate_sequence_field(result.instance, field)
-            result = ModelUpdater.with_operation(result, ExtendOp(field=field, items=items))
+            result = ModelUpdater._with_operation(result, ExtendOp(field=field, items=items))
         return result
 
-    def set_item(self, **kwargs: Any) -> ModelUpdater[T]:
+    def merge_items(self, **kwargs: Any) -> ModelUpdater[T]:
         """Merge key-value pairs into a ``dict`` field.
 
         Each value must itself be a ``dict`` whose entries are merged into the
@@ -122,7 +122,7 @@ class ModelUpdater(Generic[T]):
             validate_dict_field(result.instance, field)
             if not isinstance(items, dict):
                 raise InvalidOperationError(f"Value for '{field}' must be a dict, got {type(items).__name__}")
-            result = ModelUpdater.with_operation(result, SetItemOp(field=field, items=items))
+            result = ModelUpdater._with_operation(result, MergeItemsOp(field=field, items=items))
         return result
 
     def remove(self, **kwargs: Any) -> ModelUpdater[T]:
@@ -138,7 +138,7 @@ class ModelUpdater(Generic[T]):
         result = self
         for field, target in kwargs.items():
             validate_removable_field(result.instance, field)
-            result = ModelUpdater.with_operation(result, RemoveOp(field=field, target=target))
+            result = ModelUpdater._with_operation(result, RemoveOp(field=field, target=target))
         return result
 
     def set_path(self, path: str, value: Any) -> ModelUpdater[T]:
@@ -152,7 +152,7 @@ class ModelUpdater(Generic[T]):
 
             update(user).set_path("address.geo.lat", 40.7).apply()
         """
-        return ModelUpdater.with_operation(self, SetPathOp(path=path, value=value))
+        return ModelUpdater._with_operation(self, SetPathOp(path=path, value=value))
 
     def apply(self) -> T:
         """Replay all accumulated operations and return a new model instance.

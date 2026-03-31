@@ -273,22 +273,22 @@ class TestSetItem:
             metadata={"a": "1"},
             address=Address(street="123 1st Ave", city="New York", state="NY", zip_code="10001"),
         )
-        result = update(user).set_item(metadata={"b": "2"}).apply()
+        result = update(user).merge_items(metadata={"b": "2"}).apply()
         assert result.metadata == {"a": "1", "b": "2"}
 
-    def test_set_item_non_dict_raises(self) -> None:
+    def test_merge_items_non_dict_raises(self) -> None:
         user = User(
             name="Alice", age=30, address=Address(street="123 1st Ave", city="New York", state="NY", zip_code="10001")
         )
         with pytest.raises(InvalidOperationError):
-            update(user).set_item(tags={"key": "value"})  # type: ignore[call-arg]
+            update(user).merge_items(tags={"key": "value"})  # type: ignore[call-arg]
 
-    def test_set_item_value_must_be_dict(self) -> None:
+    def test_merge_items_value_must_be_dict(self) -> None:
         user = User(
             name="Alice", age=30, address=Address(street="123 1st Ave", city="New York", state="NY", zip_code="10001")
         )
         with pytest.raises(InvalidOperationError):
-            update(user).set_item(metadata="not a dict")  # type: ignore[arg-type]
+            update(user).merge_items(metadata="not a dict")  # type: ignore[arg-type]
 
 
 class TestSetPath:

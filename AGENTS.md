@@ -103,7 +103,8 @@ The update module (`src/pydantic_plus_plus/update/`) provides `update()` and
 `ModelUpdater` — an immutable builder for type-safe model updates. Key points:
 
 - **Immutable builder** — every method returns a new `ModelUpdater`.
-- **Operations**: `set`, `append`, `extend`, `remove`, `set_item`, `set_path`.
+- **Operations**: `set`, `append`, `extend`, `remove`, `merge_items`,
+  `set_path`.
 - **Polymorphic operations** — each operation is a frozen Pydantic `BaseModel`
   subclass of `Operation(ABC, BaseModel)` with its own `apply()` method.
 - **Nested updates** — `set()` accepts dicts (deep-merged) or `ModelUpdater`

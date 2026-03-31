@@ -44,8 +44,8 @@ class PydanticPlusPlusPlugin(Plugin):
             return update.extend_signature_callback
         if fullname in update.REMOVE_METHOD_NAMES:
             return update.remove_signature_callback
-        if fullname in update.SET_ITEM_METHOD_NAMES:
-            return update.set_item_signature_callback
+        if fullname in update.MERGE_ITEMS_METHOD_NAMES:
+            return update.merge_items_signature_callback
         return None
 
 
