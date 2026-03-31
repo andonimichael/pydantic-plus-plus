@@ -44,6 +44,13 @@ from mypy.types import (
     get_proper_type,
 )
 
+from pydantic_plus_plus.mypy._reflection import (
+    get_model_fields,
+    is_basemodel_subclass,
+    is_optional_type,
+    make_optional,
+)
+
 FUNCTION_NAMES = {
     "pydantic_plus_plus.partial.api.partial",
     "pydantic_plus_plus.partial.partial",
@@ -53,17 +60,6 @@ CLASS_METHOD_NAMES = {
     "pydantic_plus_plus.partial.PartialBaseModel.from_model",
 }
 ALL_HOOK_NAMES = FUNCTION_NAMES | CLASS_METHOD_NAMES
-
-_PYDANTIC_INTERNAL_NAMES = frozenset(
-    {
-        "model_config",
-        "model_fields",
-        "model_computed_fields",
-        "model_extra",
-        "model_fields_set",
-        "model_post_init",
-    }
-)
 
 _synthetic_cache: dict[str, TypeInfo] = {}
 
@@ -75,7 +71,7 @@ def dynamic_class_callback(ctx: DynamicClassDefContext) -> None:
     if model_info is None:
         return
 
-    partial_base_info = _get_partial_base_info(ctx)
+    partial_base_info = _resolve_partial_base_info(ctx)
     if partial_base_info is None:
         return
 
@@ -208,44 +204,26 @@ def _get_fields_with_defaults(model_info: TypeInfo) -> frozenset[str]:
     return frozenset(result)
 
 
-def _make_optional(typ: Type) -> Type:
-    proper_typ = get_proper_type(typ)
-    if isinstance(proper_typ, UnionType) and any(isinstance(t, NoneType) for t in proper_typ.items):
-        return typ
-    return UnionType([typ, NoneType()])
-
-
-def _is_optional_type(typ: Type) -> bool:
-    proper = get_proper_type(typ)
-    if isinstance(proper, UnionType):
-        return any(isinstance(t, NoneType) for t in proper.items)
-    return isinstance(proper, NoneType)
-
-
-def _is_basemodel_subclass(info: TypeInfo) -> bool:
-    return any(b.fullname == "pydantic.main.BaseModel" for b in info.mro)
-
-
 def _with_dict_coercion(typ: Type, dict_str_any: Instance) -> Type:
     proper = get_proper_type(typ)
-    if isinstance(proper, Instance) and _is_basemodel_subclass(proper.type):
+    if isinstance(proper, Instance) and is_basemodel_subclass(proper.type):
         return UnionType([typ, dict_str_any])
     if isinstance(proper, UnionType):
         for item in proper.items:
             item_proper = get_proper_type(item)
-            if isinstance(item_proper, Instance) and _is_basemodel_subclass(item_proper.type):
+            if isinstance(item_proper, Instance) and is_basemodel_subclass(item_proper.type):
                 return UnionType([*proper.items, dict_str_any])
     return typ
 
 
-def _get_partial_base_info(api: DynamicClassDefContext) -> TypeInfo | None:
-    partial_base_sym = api.api.lookup_fully_qualified_or_none("pydantic_plus_plus.partial.api.PartialBaseModel")
+def _resolve_partial_base_info(ctx: DynamicClassDefContext) -> TypeInfo | None:
+    partial_base_sym = ctx.api.lookup_fully_qualified_or_none("pydantic_plus_plus.partial.api.PartialBaseModel")
     if partial_base_sym is None or not isinstance(partial_base_sym.node, TypeInfo):
         return None
     return partial_base_sym.node
 
 
-def _resolve_model_info(call: CallExpr, api: DynamicClassDefContext) -> TypeInfo | None:
+def _resolve_model_info(call: CallExpr, ctx: DynamicClassDefContext) -> TypeInfo | None:
     if not call.args:
         return None
 
@@ -254,7 +232,7 @@ def _resolve_model_info(call: CallExpr, api: DynamicClassDefContext) -> TypeInfo
         return None
 
     if isinstance(first_arg, NameExpr) and first_arg.fullname:
-        sym = api.api.lookup_fully_qualified_or_none(first_arg.fullname)
+        sym = ctx.api.lookup_fully_qualified_or_none(first_arg.fullname)
         if sym is not None and isinstance(sym.node, TypeInfo):
             return sym.node
 
@@ -328,42 +306,36 @@ def _build_partial_typeinfo(
         nested_specs = {}
 
     original_field_types: dict[str, Type] = {}
-    for base in model_info.mro:
-        for name, sym in base.names.items():
-            if name in info.names:
-                continue
-            if not isinstance(sym.node, Var) or sym.node.type is None:
-                continue
-            if name.startswith("_") or name in _PYDANTIC_INTERNAL_NAMES:
-                continue
+    for name, original_type in get_model_fields(model_info).items():
+        if name in info.names:
+            continue
 
-            original_type = sym.node.type
-            is_terminal = optional_fields is None or name in optional_fields
-            nested = nested_specs.get(name)
+        is_terminal = optional_fields is None or name in optional_fields
+        nested = nested_specs.get(name)
 
-            if nested is not None and function_type is not None:
-                field_type = _resolve_nested_partial_type(
-                    original_type,
-                    nested,
-                    partial_base_info,
-                    module_name,
-                    function_type,
-                )
-                if is_terminal:
-                    field_type = _make_optional(field_type)
-            elif is_terminal:
-                field_type = _make_optional(original_type)
-            else:
-                field_type = original_type
+        if nested is not None and function_type is not None:
+            field_type = _resolve_nested_partial_type(
+                original_type,
+                nested,
+                partial_base_info,
+                module_name,
+                function_type,
+            )
+            if is_terminal:
+                field_type = make_optional(field_type)
+        elif is_terminal:
+            field_type = make_optional(original_type)
+        else:
+            field_type = original_type
 
-            if field_type is not original_type:
-                original_field_types[name] = original_type
+        if field_type is not original_type:
+            original_field_types[name] = original_type
 
-            var = Var(name, field_type)
-            var.info = info
-            var._fullname = f"{info.fullname}.{name}"
-            var.is_initialized_in_class = True
-            info.names[name] = SymbolTableNode(MDEF, var)
+        var = Var(name, field_type)
+        var.info = info
+        var._fullname = f"{info.fullname}.{name}"
+        var.is_initialized_in_class = True
+        info.names[name] = SymbolTableNode(MDEF, var)
 
     _synthetic_cache[cache_key] = info
 
@@ -390,7 +362,7 @@ def _add_init(
                 param_type = UnionType([param_type, original])
             if dict_str_any is not None:
                 param_type = _with_dict_coercion(param_type, dict_str_any)
-            is_init_optional = _is_optional_type(sym.node.type) or name in fields_with_defaults
+            is_init_optional = is_optional_type(sym.node.type) or name in fields_with_defaults
             arg_kind = ARG_NAMED_OPT if is_init_optional else ARG_NAMED
             args.append(Argument(Var(name), param_type, None, arg_kind))
 

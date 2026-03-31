@@ -1,36 +1,19 @@
 from __future__ import annotations
 
-from mypy.nodes import ARG_NAMED_OPT, ArgKind, TypeInfo, Var
+from mypy.nodes import ARG_NAMED_OPT, ArgKind, TypeInfo
 from mypy.plugin import MethodSigContext
 from mypy.types import (
     AnyType,
     CallableType as MypyCallableType,
     Instance,
-    NoneType,
     Type,
     TypeOfAny,
     UnionType,
     get_proper_type,
 )
 
-_PYDANTIC_INTERNAL_NAMES = frozenset(
-    {
-        "model_config",
-        "model_fields",
-        "model_computed_fields",
-        "model_extra",
-        "model_fields_set",
-        "model_post_init",
-    }
-)
-
-_SEQUENCE_FULLNAMES = frozenset(
-    {
-        "builtins.list",
-        "builtins.set",
-        "builtins.frozenset",
-    }
-)
+from pydantic_plus_plus.mypy._constants import SEQUENCE_FULLNAMES
+from pydantic_plus_plus.mypy._reflection import get_model_fields, is_basemodel_subclass, unwrap_optional
 
 SET_METHOD_NAMES = frozenset(
     {
@@ -72,7 +55,7 @@ def set_signature_callback(ctx: MethodSigContext) -> MypyCallableType:
     if model_info is None:
         return ctx.default_signature
 
-    fields = _get_model_fields(model_info)
+    fields = get_model_fields(model_info)
     instance_type = get_proper_type(ctx.type)
     updater_type_info = instance_type.type if isinstance(instance_type, Instance) else None
 
@@ -93,7 +76,7 @@ def append_signature_callback(ctx: MethodSigContext) -> MypyCallableType:
     if model_info is None:
         return ctx.default_signature
 
-    fields = _get_model_fields(model_info)
+    fields = get_model_fields(model_info)
     kwargs: list[tuple[str, Type]] = []
     for name, field_type in fields.items():
         element_type = _get_element_type(field_type)
@@ -108,7 +91,7 @@ def extend_signature_callback(ctx: MethodSigContext) -> MypyCallableType:
     if model_info is None:
         return ctx.default_signature
 
-    fields = _get_model_fields(model_info)
+    fields = get_model_fields(model_info)
     kwargs: list[tuple[str, Type]] = []
     for name, field_type in fields.items():
         element_type = _get_element_type(field_type)
@@ -124,7 +107,7 @@ def remove_signature_callback(ctx: MethodSigContext) -> MypyCallableType:
     if model_info is None:
         return ctx.default_signature
 
-    fields = _get_model_fields(model_info)
+    fields = get_model_fields(model_info)
     kwargs: list[tuple[str, Type]] = []
     for name, field_type in fields.items():
         element_type = _get_element_type(field_type)
@@ -144,7 +127,7 @@ def merge_items_signature_callback(ctx: MethodSigContext) -> MypyCallableType:
     if model_info is None:
         return ctx.default_signature
 
-    fields = _get_model_fields(model_info)
+    fields = get_model_fields(model_info)
     kwargs: list[tuple[str, Type]] = []
     for name, field_type in fields.items():
         dict_instance = _get_dict_instance(field_type)
@@ -164,49 +147,22 @@ def _extract_model_info(ctx: MethodSigContext) -> TypeInfo | None:
     return None
 
 
-def _unwrap_optional(typ: Type) -> Type:
-    proper = get_proper_type(typ)
-    if isinstance(proper, UnionType):
-        non_none = [t for t in proper.items if not isinstance(get_proper_type(t), NoneType)]
-        if len(non_none) == 1:
-            return non_none[0]
-    return typ
-
-
-def _is_basemodel_subclass(info: TypeInfo) -> bool:
-    return any(base.fullname == "pydantic.main.BaseModel" for base in info.mro)
-
-
-def _get_model_fields(model_info: TypeInfo) -> dict[str, Type]:
-    fields: dict[str, Type] = {}
-    for base in model_info.mro:
-        for name, sym in base.names.items():
-            if name in fields:
-                continue
-            if not isinstance(sym.node, Var) or sym.node.type is None:
-                continue
-            if name.startswith("_") or name in _PYDANTIC_INTERNAL_NAMES:
-                continue
-            fields[name] = sym.node.type
-    return fields
-
-
 def _get_element_type(typ: Type) -> Type | None:
-    proper = get_proper_type(_unwrap_optional(typ))
-    if isinstance(proper, Instance) and proper.type.fullname in _SEQUENCE_FULLNAMES and proper.args:
+    proper = get_proper_type(unwrap_optional(typ))
+    if isinstance(proper, Instance) and proper.type.fullname in SEQUENCE_FULLNAMES and proper.args:
         return proper.args[0]
     return None
 
 
 def _get_dict_key_type(typ: Type) -> Type | None:
-    proper = get_proper_type(_unwrap_optional(typ))
+    proper = get_proper_type(unwrap_optional(typ))
     if isinstance(proper, Instance) and proper.type.fullname == "builtins.dict" and len(proper.args) >= 1:
         return proper.args[0]
     return None
 
 
 def _get_dict_instance(typ: Type) -> Instance | None:
-    proper = get_proper_type(_unwrap_optional(typ))
+    proper = get_proper_type(unwrap_optional(typ))
     if isinstance(proper, Instance) and proper.type.fullname == "builtins.dict":
         return proper
     return None
@@ -217,9 +173,9 @@ def _build_set_param_type(
     updater_type_info: TypeInfo | None,
     dict_str_any: Instance,
 ) -> Type:
-    unwrapped = _unwrap_optional(field_type)
+    unwrapped = unwrap_optional(field_type)
     proper = get_proper_type(unwrapped)
-    if isinstance(proper, Instance) and _is_basemodel_subclass(proper.type):
+    if isinstance(proper, Instance) and is_basemodel_subclass(proper.type):
         types: list[Type] = [field_type, dict_str_any]
         if updater_type_info is not None:
             types.append(Instance(updater_type_info, [proper]))
