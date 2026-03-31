@@ -4,7 +4,7 @@ from typing import Annotated, Optional, get_args
 import pytest
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from pydantic_plus_plus.partial import PartialBaseModel, partial
-from pydantic_plus_plus.partial._partial import _partial_model_cache
+from pydantic_plus_plus.partial._partial import _clear_cache
 
 
 class Country(str, Enum):
@@ -61,8 +61,8 @@ class Tree(BaseModel):
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache() -> None:
-    _partial_model_cache.clear()
+def clear_cache() -> None:
+    _clear_cache()
 
 
 class TestPartialConstruction:

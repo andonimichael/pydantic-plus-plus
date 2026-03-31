@@ -94,9 +94,4 @@ def partial(model: type[T], *fields: str, recursive: bool = True) -> type[Partia
         PartialUser = partial(User, "address.city")
         PartialUser = partial(User, "address.*")
     """
-    if fields:
-        field_selection = FieldSelection.parse(*fields)
-        field_selection.validate(model)
-        return create_partial(model, field_selection=field_selection)
-    else:
-        return create_partial(model, recursive=recursive)
+    return PartialBaseModel.from_model(model, *fields, recursive=recursive)

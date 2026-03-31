@@ -170,3 +170,7 @@ def _get_partial_base_class() -> type[BaseModel]:
     from pydantic_plus_plus.partial.api import PartialBaseModel
 
     return PartialBaseModel
+
+
+def _clear_cache() -> None:
+    _partial_model_cache.clear()

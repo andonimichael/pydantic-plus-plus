@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
 from pydantic import BaseModel
 
 
@@ -83,7 +82,7 @@ class FieldSelection:
     def is_wildcard_only(self) -> bool:
         return self.is_wildcard and not self.optional_fields and not self.nested_selections
 
-    def validate(self, model: type[Any]) -> None:
+    def validate(self, model: type[BaseModel]) -> None:
         """Validate that all field specs reference valid paths on the model."""
 
         model_fields = model.model_fields
